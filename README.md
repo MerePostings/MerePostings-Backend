@@ -27,3 +27,5 @@ TO GET STARTED
 5. add service account private key under functions root
 
 6. npm start
+
+\** To access the emulator local storage rename the firebase-export*to imported-data before rerunning the server
