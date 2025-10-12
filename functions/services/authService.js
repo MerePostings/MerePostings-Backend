@@ -8,16 +8,11 @@ const {
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { sendVerificationEmail } = require('./mailService')
+const { createContactIfNotExists } = require("../config/hubspotSDK")
 
 firebaseAdmin.initializeApp({
     credential: firebaseAdmin.credential.cert(process.env.SIGNATURE),
 });
-
-function toE164(phoneNumber, countryCode = '+1') {
-    const digitsOnly = phoneNumber.replace(/\D/g, '');
-    const prefix = countryCode.startsWith('+') ? countryCode : `+${countryCode}`;
-    return `${prefix}${digitsOnly}`;
-}
 
 authService = {
 
@@ -26,29 +21,19 @@ authService = {
       firstName,
       lastName,
       email,
-      password,
-      oldPhone
+      password
     }) => {
 
     try{
     
-      if (!firstName || !lastName || !email || !oldPhone || !password) {
+      if (!firstName || !lastName || !email || !password) {
           throw new AppError("Please fill in all of the required fields.", 400);
       }
   
-      const phoneRegex = /^\+[1-9]\d{1,14}$/;
-  
-      const phoneNumber =  toE164(oldPhone, '+1');
-  
-      if (!phoneRegex.test(phoneNumber)) {
-          throw new AppError("Invalid phone number format.", 400);
-      }
-
       const userRecord = await firebaseAdmin.auth().createUser({
           email,
           displayName: `${firstName} ${lastName}`,
           emailVerified: false,
-          phoneNumber,
           password,
           disabled: false,
       });
@@ -61,13 +46,13 @@ authService = {
         firstName,
         lastName,
         email,
-        phoneNumber,
         createdAt: serverTimestamp(), 
       });
 
+      createContactIfNotExists({email:email,firstname:firstName,lastname:lastName,platform_affiliation:"Commercial Xclusive"});
       
       const actionCodeSettings = {
-        url: "http://localhost:5173",
+        url: process.env.FRONTEND_URL,
         handleCodeInApp: true,
       };
       
@@ -97,27 +82,6 @@ authService = {
       }
     }
   },
-
-  ifUserVerified : async ({ email }) => {
-    try{
-      const userRecord = await firebaseAdmin.auth().getUserByEmail(email);
-
-      const hasPhoneNumber = !!userRecord.phoneNumber;
-
-      return {
-        exists: true,
-        emailVerified: userRecord.emailVerified,
-        phoneVerified: hasPhoneNumber,
-        disabled: userRecord.disabled,
-      };
-    }catch(err){
-      if (err.code === "auth/user-not-found") {
-        return { exists: false, message: "User not found." };
-      } else {
-        throw new AppError(err.message, 500);
-      }
-    }
-  }
 
 }
 

@@ -14,6 +14,7 @@
   },
   "main": "index.js",
   "dependencies": {
+    "@hubspot/api-client": "^13.4.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
