@@ -1,4 +1,4 @@
-const firebaseAdmin = require("firebase-admin");
+const firebaseAdmin = require("../config/firebaseAdmin");
 const {
   doc,
   collection,
@@ -9,10 +9,6 @@ const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { sendVerificationEmail } = require('./mailService')
 const { createContactIfNotExists } = require("../config/hubspotSDK")
-
-firebaseAdmin.initializeApp({
-    credential: firebaseAdmin.credential.cert(process.env.SIGNATURE),
-});
 
 authService = {
 
@@ -80,6 +76,24 @@ authService = {
       }catch(err){
         throw new AppError(err.message, err.statusCode)
       }
+    }
+  },
+
+  getUserById: async (id) => {
+    try {
+      const docRef = db.collection("users").doc(id);
+      const docSnap = await docRef.get();
+
+
+
+      const user = {
+        firstName: docSnap.data().firstName,
+        lastName: docSnap.data().lastName,
+        email: docSnap.data().email,
+      };
+      return user;
+    } catch (err) {
+      throw new AppError("User Not Found!", 400);
     }
   },
 

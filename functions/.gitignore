@@ -95,7 +95,7 @@ yarn-error.log*
 # Environment files (local configs)
 /.env.*
 
-mere-postings-auel*.json
+mere-posting*.json
 
 imported-data/
 firebase-export-*/
