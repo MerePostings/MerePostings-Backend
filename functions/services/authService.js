@@ -110,23 +110,6 @@ authService = {
     }
   },
 
-  getUserById: async (id) => {
-    try {
-      const docRef = db.collection("users").doc(id);
-      const docSnap = await docRef.get();
-
-      const user = {
-        firstName: docSnap.data().firstName,
-        lastName: docSnap.data().lastName,
-        email: docSnap.data().email,
-      };
-
-      return user;
-    } catch (err) {
-      throw new AppError("User Not Found!", 400);
-    }
-  },
-
 }
 
 

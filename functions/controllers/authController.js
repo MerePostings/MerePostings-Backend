@@ -8,18 +8,6 @@ const authController = {
 
         res.status(201).json({ msg: "User signed up successfully!" })
     }),
-    
-    getUserById: asyncErrorHandler(async (req, res) => {
-        const { id } = req.params;
-        const result = await authService.getUserById(id);
-        if (result.message) {
-        res.status(404).json({ msg: result.message });
-        } else {
-            res.status(200).json({
-                user: result,
-            });
-        }
-    }),
 
 }
 
