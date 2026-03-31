@@ -12,6 +12,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
+      "https://mere-posting-staging.web.app",
     ],
     credentials: true,
   })

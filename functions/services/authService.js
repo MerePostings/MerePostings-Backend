@@ -5,7 +5,7 @@ const { sendVerificationEmail } = require('./mailService')
 const { createContactIfNotExists } = require("../config/hubspotSDK")
 const { FieldValue } = require('firebase-admin/firestore');
 
-authService = {
+const authService = {
 
   signUp : async (
     { 
