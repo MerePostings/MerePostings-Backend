@@ -63,42 +63,47 @@ const propertyService = {
      * - Saves core property fields and all sectionValues to the document
      * - Sets initial status as 'draft' and paid as false
      */
-    addProperty: async (userId, payload) => {
+    saveProperty: async (userId, payload) => {
         const cleanData = propertyService.cleanPayload(payload);
 
         const {
             saleType,
             selectedType,
             subType,
-            listingId: existingListingId,
+            existingListingId,
             sectionValues,
         } = cleanData;
 
-        if (existingListingId) {
-            console.log(`Listing ${existingListingId} already exists. Skipping creation.`);
-            return existingListingId;
-        }
+        const dataToSave = {
+            ownerId: userId,
+            saleType: saleType || null,
+            propertyType: selectedType || null,
+            subType: subType || null,
+            ...sectionValues,
+            paid: false,
+            status: 'draft',
+            updatedAt: FieldValue.serverTimestamp(),
+        };
 
         try {
-            const listingRef = await db.collection('properties').add({
-                ownerId: userId,
-                saleType: saleType || null,
-                propertyType: selectedType || null,
-                subType: subType || null,
-                ...sectionValues,
-                paid: false,
-                status: 'draft',
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
+            if (existingListingId) {
+                await db.collection('properties')
+                    .doc(existingListingId)
+                    .set(dataToSave, { merge: true });
 
-            const listingId = listingRef.id;
+                return existingListingId;
+            } else {
+                const listingRef = await db.collection('properties').add({
+                    ...dataToSave,
+                    createdAt: FieldValue.serverTimestamp(),
+                });
 
-            return listingId;
-
+                const newListingId = listingRef.id;
+                return newListingId;
+            }
         } catch (e) {
-            console.error("Error creating property:", e);
-            throw new AppError("Failed to Create Property", 500);
+            console.error("Error saving property:", e);
+            throw new AppError("Failed to save Property", 500);
         }
     },
 

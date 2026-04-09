@@ -4,9 +4,8 @@ const stripeService = require('../services/stripeService');
 
 const propertyController = {
     addProperty: asyncErrorHandler(async(req, res)=>{
-        console.log("Here")
-        const listingId = await propertyService.addProperty(req.user.uid, req.body)
-        res.status(200).json({listingId})
+        const listingId = await propertyService.saveProperty(req.user.uid, req.body);
+        res.status(200).json({listingId});
     }),
 
     uploadMedia: asyncErrorHandler( async (req, res) => {
