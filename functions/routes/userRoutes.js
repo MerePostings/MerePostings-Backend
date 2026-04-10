@@ -15,5 +15,11 @@ router.get(
     userController.getUserById
 );
 
+router.get(
+    "/get-user-transactions",
+    verifyFirebaseToken,
+    userController.getUserTransactions
+);
+
 
 module.exports = router;

@@ -109,7 +109,7 @@ const stripeService = {
     ) => {
         try{
             const transactionData = {
-                timestamp: FieldValue.serverTimestamp()
+                createdAt: FieldValue.serverTimestamp()
             };
 
             // Only add fields that are provided

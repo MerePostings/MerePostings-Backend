@@ -36,6 +36,37 @@ const userService = {
             throw new AppError("User Not Found!", 400);
         }
     },
+
+    getUserTransactions : async (uid) => {
+        try {
+            const userRef = db.collection("users").doc(uid);
+            const userSnap = await userRef.get();
+
+            if (!userSnap.exists) {
+                throw new Error("User document not found");
+            }
+
+            const userData = userSnap.data();
+            const customerId = userData.stripeCustomerId;
+
+            const snapshot = await db
+            .collection("transactions")
+            .where("customerId", "==", customerId)
+            .get();
+
+            const transactions = snapshot.docs.map((doc) => ({
+                type: doc.data().type,
+                amount: doc.data().amount,
+                status: doc.data().status,
+                createdAt: doc.data().createdAt.toDate().toISOString(),
+            }));
+
+            return transactions;
+        } catch (error) {
+            console.log("Error fetching transactions:", error);
+            throw new AppError(error.message || "Failed to fetch transactions", 500);
+        }
+    },
 }
 
 module.exports = userService
