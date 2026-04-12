@@ -440,47 +440,57 @@ const sendPaymentConfirmationEmail = async (
               </div>
 
               <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:20px 20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                              <tr>
-                                  <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                      <div style="font-family:'Open Sans', sans-serif;font-size:18px;font-weight:600;line-height:1;text-align:left;color:#333333;">Hello, ${firstName}!</div>
-                                  </td>
-                                  <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                      <div style="font-family:'Open Sans', sans-serif;font-size:14px;font-weight:400;line-height:1.6;text-align:left;color:#555555;">
-                                          Your payment was received and your listing is now being reviewed. We'll have everything ready shortly — sit back and let us take it from here.
-                                      </div>
-                                  </td>
-                              </tr>
+                <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
+                    <tbody>
+                    <tr>
+                        <td style="direction:ltr;font-size:0px;padding:20px 20px;text-align:center;">
+                        <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
+                            <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
+                            <tbody>
 
-                              <tr>
-                                  <td align="center" style="font-size:0px;padding:25px 30px;word-break:break-word;">
-                                      <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;">
-                                          <tbody>
-                                          <tr>
-                                              <td align="center" role="presentation" style="border:none;border-radius:5px;cursor:auto;mso-padding-alt:10px 25px;background:transparent;" valign="middle">
-                                              <a href="${listingLink}" 
-                                                style="display:inline-block;background:transparent;color:#154360;border:2px solid #154360;font-family:'Open Sans', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:120%;margin:0;text-decoration:none;text-transform:none;padding:12px 32px;border-radius:5px;" 
-                                                target="_blank">View Your Listing</a>
-                                              </td>
-                                          </tr>
-                                          </tbody>
-                                      </table>
-                                  </td>
-                              </tr>
-                          </tbody>
-                          </table>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-              </div>
+                                <!-- Greeting -->
+                                <tr>
+                                <td align="left" style="font-size:0px;padding:10px 25px 6px 25px;word-break:break-word;">
+                                    <div style="font-family:'Open Sans', sans-serif;font-size:18px;font-weight:600;line-height:1;text-align:left;color:#333333;">
+                                    Hello, ${firstName}!
+                                    </div>
+                                </td>
+                                </tr>
+
+                                <!-- Body text -->
+                                <tr>
+                                <td align="left" style="font-size:0px;padding:6px 25px 10px 25px;word-break:break-word;">
+                                    <div style="font-family:'Open Sans', sans-serif;font-size:14px;font-weight:400;line-height:1.6;text-align:left;color:#555555;">
+                                    Your payment was received and your listing is now being reviewed. We'll have everything ready shortly — sit back and let us take it from here.
+                                    </div>
+                                </td>
+                                </tr>
+
+                                <!-- CTA Button -->
+                                <tr>
+                                <td align="center" style="font-size:0px;padding:25px 30px;word-break:break-word;">
+                                    <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;">
+                                    <tbody>
+                                        <tr>
+                                        <td align="center" role="presentation" style="border:none;border-radius:5px;cursor:auto;mso-padding-alt:10px 25px;background:transparent;" valign="middle">
+                                            <a href="${listingLink}"
+                                            style="display:inline-block;background:transparent;color:#154360;border:2px solid #154360;font-family:'Open Sans', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:120%;margin:0;text-decoration:none;text-transform:none;padding:12px 32px;border-radius:5px;"
+                                            target="_blank">View Your Listing</a>
+                                        </td>
+                                        </tr>
+                                    </tbody>
+                                    </table>
+                                </td>
+                                </tr>
+
+                            </tbody>
+                            </table>
+                        </div>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
 
               <div style="background:#7a8c6e;background-color:#7a8c6e;margin:0px auto;max-width:600px;">
               <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#7a8c6e;background-color:#7a8c6e;width:100%;">
