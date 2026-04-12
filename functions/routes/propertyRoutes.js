@@ -3,6 +3,12 @@ const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 
+router.get(
+    "/get-owenr-properties",
+    verifyFirebaseToken,
+    propertyController.getOwnerProperties
+);
+
 router.post(
     "/create-checkout-url/:listingId",
     verifyFirebaseToken,

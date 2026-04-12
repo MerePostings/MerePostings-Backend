@@ -78,7 +78,7 @@ const stripeService = {
                         customerId
                     },
                 },
-                success_url: `${process.env.FRONTEND_URL}/success-payment`,
+                success_url: `${process.env.FRONTEND_URL}/create-listing/success`,
                 cancel_url: `${process.env.FRONTEND_URL}/failure-payment`,
             };
 

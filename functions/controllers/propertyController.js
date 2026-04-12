@@ -49,7 +49,12 @@ const propertyController = {
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
         const checkoutUrl = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
         res.status(200).json({checkoutUrl})
-    })
+    }),
+
+    getOwnerProperties: asyncErrorHandler( async (req, res) => {
+        const properties = await propertyService.getOwnerProperties(req.user.uid)
+        res.status(200).json({properties})
+    }),
 }
 
 module.exports = propertyController

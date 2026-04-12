@@ -249,5 +249,26 @@ const propertyService = {
 
         return mediaUrls;
     },
+
+    getOwnerProperties: async (uid) => {
+        try {
+            const snapshot = await db
+            .collection("properties")
+            .where("ownerId", "==", uid)
+            .orderBy("updatedAt", "desc")
+            .get();
+
+            const properties = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                updatedAt: doc.data().updatedAt?.toDate?.() || doc.data().updatedAt,
+            }));
+
+            return properties;
+        } catch (e) {
+            console.error("Error in getOwnerProperty:", e);
+            throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
+        }
+    },
 }
 module.exports = propertyService
