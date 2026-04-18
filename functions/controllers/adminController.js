@@ -22,6 +22,11 @@ const adminController = {
     const result = await adminService.getTransactions(req.query);
     res.status(200).json(result);
   }),
+
+  getListings: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.getListings(req.query);
+    res.status(200).json(result);
+  }),
 }
 
 module.exports = adminController;
