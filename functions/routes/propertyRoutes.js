@@ -4,7 +4,7 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 
 router.get(
-    "/get-owenr-properties",
+    "/get-owner-properties",
     verifyFirebaseToken,
     propertyController.getOwnerProperties
 );
