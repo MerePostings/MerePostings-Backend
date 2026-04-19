@@ -211,6 +211,72 @@ const adminService = {
       throw new AppError(e.message || 'Failed to fetch transactions', 500);
     }
   },
+
+  getListings: async ({ search, status, page, limit }) => {
+    try {
+      const pageNum = parseInt(page) || 1;
+      const pageSize = parseInt(limit) || 20;
+
+      let query = db.collection('properties').orderBy('updatedAt', 'desc');
+      if (status) query = query.where('status', '==', status);
+
+      const snapshot = await query.get();
+
+      let listings = snapshot.docs.map(doc => {
+        const d = doc.data();
+
+        const loc = d.Location || {};
+        const addressParts = [
+          loc.streetNumber,
+          loc.streetName,
+          loc.streetDirection,
+          loc.apartmentUnitNumber ? `Unit ${loc.apartmentUnitNumber}` : null,
+          loc.municipality,
+          loc.area,
+        ].filter(Boolean);
+        const address = addressParts.join(' ') || '';
+
+        const exterior = d.Exterior || {};
+        const title = [d.subType, exterior.propertyType]
+          .filter(Boolean)
+          .join(' ') || 'Unlisted Property';
+
+        const photos = d.media?.photos || [];
+        const thumbnail = photos[0]?.url || null;
+
+        return {
+          id: doc.id,
+          status: d.status || 'pending',
+          title,
+          address,
+          propertyType: d.propertyType || '',   // residential / commercial
+          subType: d.subType || '',              // Detached / Condo / Duplex etc.
+          saleType: d.saleType || '',            // sell / rent
+          listPrice: d.contractCommencement?.listPrice || '',
+          thumbnail,
+          updatedAt: d.updatedAt?.toDate().toISOString() || null,
+        };
+      });
+
+      if (search) {
+        const s = search.toLowerCase();
+        listings = listings.filter(l =>
+          l.title.toLowerCase().includes(s) ||
+          l.address.toLowerCase().includes(s) ||
+          l.subType.toLowerCase().includes(s) ||
+          l.propertyType.toLowerCase().includes(s)
+        );
+      }
+
+      const total = listings.length;
+      const paginated = listings.slice((pageNum - 1) * pageSize, pageNum * pageSize);
+
+      return { listings: paginated, total, page: pageNum, limit: pageSize };
+    } catch (e) {
+      console.log(e)
+      throw new AppError(e.message || 'Failed to fetch listings', 500);
+    }
+  },
 }
 
 module.exports = adminService
