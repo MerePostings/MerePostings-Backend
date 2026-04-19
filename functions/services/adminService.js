@@ -333,6 +333,20 @@ const adminService = {
       throw new AppError(e.message || 'Failed to update status', 500);
     }
   },
+
+  updateTrackingStep: async (listingId, stepId, completed) => {
+    try {
+      const { FieldValue } = require('firebase-admin/firestore');
+      await db.collection('properties').doc(listingId).update({
+        [`tracking.${stepId}`]: completed,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { success: true };
+    } catch (e) {
+      throw new AppError(e.message || 'Failed to update tracking step', 500);
+    }
+  },
+
 }
 
 module.exports = adminService

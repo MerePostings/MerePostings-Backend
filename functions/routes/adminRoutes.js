@@ -10,5 +10,6 @@ router.get('/listings', adminController.getListings);
 router.get('/listings/:listingId', adminController.getListingById);
 router.patch('/listings/:listingId', adminController.updateListing);
 router.patch('/listings/:listingId/status', adminController.updateListingStatus);
+router.patch('/listings/:listingId/tracking', adminController.updateTrackingStep);
 
 module.exports = router;

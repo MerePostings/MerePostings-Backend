@@ -42,6 +42,14 @@ const adminController = {
     const result = await adminService.updateListingStatus(req.params.listingId, req.body.status);
     res.status(200).json(result);
   }),
+
+  updateTrackingStep: asyncErrorHandler(async (req, res) => {
+    const { listingId } = req.params;
+    const { stepId, completed } = req.body;
+    const result = await adminService.updateTrackingStep(listingId, stepId, completed);
+    res.status(200).json(result);
+  }),
+
 }
 
 module.exports = adminController;
