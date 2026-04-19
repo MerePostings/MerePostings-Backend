@@ -9,6 +9,11 @@ router.get(
     propertyController.getOwnerProperties
 );
 
+router.get(
+    "/listings/:id",
+    verifyFirebaseToken,
+    propertyController.getListing
+);
 router.post(
     "/create-checkout-url/:listingId",
     verifyFirebaseToken,

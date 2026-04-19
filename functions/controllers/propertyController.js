@@ -9,6 +9,11 @@ const propertyController = {
         res.status(200).json({listingId});
     }),
 
+    getListing: asyncErrorHandler(async(req,res)=>{
+        const listing = await propertyService.getListing(req.user.uid,req.params.id)
+        res.status(200).json({listing})
+    }),
+
     uploadMedia: asyncErrorHandler( async (req, res) => {
         const { listingId, mediaType } = req.params;
 
