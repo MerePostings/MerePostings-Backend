@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const buildAddressName = (location) => {
-    try{
+    try {
         console.log("here")
 
         const parts = [
@@ -24,8 +24,8 @@ const buildAddressName = (location) => {
         const municipality = location.municipality ?? null;
         console.log([parts, unit, municipality].filter(Boolean).join(', '))
         return [parts, unit, municipality].filter(Boolean).join(', ');
-    }catch(e){
-        console.log(e)            
+    } catch (e) {
+        console.log(e)
     }
 }
 
@@ -70,10 +70,10 @@ const propertyService = {
         }
 
         Object.keys(cleaned).forEach(key => {
-            if (typeof cleaned[key] === 'object' && 
-                key !== 'sectionValues' && 
-                key !== 'saleType' && 
-                key !== 'selectedType' && 
+            if (typeof cleaned[key] === 'object' &&
+                key !== 'sectionValues' &&
+                key !== 'saleType' &&
+                key !== 'selectedType' &&
                 key !== 'subType') {
                 cleaned[key] = cleanObject(cleaned[key]);
             }
@@ -216,8 +216,8 @@ const propertyService = {
 
             const getOrCreateFolder = async (parentId, folderName) => {
                 const q = parentId
-                ? `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
-                : `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${sharedDriveId}' in parents and trashed=false`;
+                    ? `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+                    : `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${sharedDriveId}' in parents and trashed=false`;
 
                 const res = await drive.files.list({
                     q,
@@ -261,16 +261,16 @@ const propertyService = {
             await Promise.all(
                 files.map(async (file, index) => {
                     const uploaded = await drive.files.create({
-                    requestBody: {
-                        name: `${index + 1}`,
-                        parents: [subFolderId],
-                    },
-                    media: {
-                        mimeType: file.mimetype,
-                        body: Readable.from(file.buffer),
-                    },
-                    fields: 'id, webViewLink',
-                    supportsAllDrives: true,
+                        requestBody: {
+                            name: `${index + 1}`,
+                            parents: [subFolderId],
+                        },
+                        media: {
+                            mimeType: file.mimetype,
+                            body: Readable.from(file.buffer),
+                        },
+                        fields: 'id, webViewLink',
+                        supportsAllDrives: true,
                     });
 
                     return uploaded.data;
@@ -284,13 +284,40 @@ const propertyService = {
         return mediaUrls;
     },
 
+    getListing: async (uid, id) => {
+        try {
+            const docRef = db.collection("properties").doc(id);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = docSnap.data();
+
+            if (data.ownerId !== uid) {
+                throw new AppError("Unauthorized access to this property", 403);
+            }
+
+            return {
+                id: docSnap.id,
+                ...data,
+                updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+            };
+
+        } catch (e) {
+            console.error("Error in getListing:", e);
+            throw new AppError(`Failed to fetch listing: ${e.message}`, 500);
+        }
+    },
+
     getOwnerProperties: async (uid) => {
         try {
             const snapshot = await db
-            .collection("properties")
-            .where("ownerId", "==", uid)
-            .orderBy("updatedAt", "desc")
-            .get();
+                .collection("properties")
+                .where("ownerId", "==", uid)
+                .orderBy("updatedAt", "desc")
+                .get();
 
             const properties = snapshot.docs.map((doc) => ({
                 id: doc.id,
@@ -304,5 +331,6 @@ const propertyService = {
             throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
         }
     },
+
 }
 module.exports = propertyService
