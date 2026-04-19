@@ -27,6 +27,21 @@ const adminController = {
     const result = await adminService.getListings(req.query);
     res.status(200).json(result);
   }),
+
+  getListingById: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.getListingById(req.params.listingId);
+    res.status(200).json(result);
+  }),
+
+  updateListing: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.updateListing(req.params.listingId, req.body);
+    res.status(200).json(result);
+  }),
+
+  updateListingStatus: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.updateListingStatus(req.params.listingId, req.body.status);
+    res.status(200).json(result);
+  }),
 }
 
 module.exports = adminController;

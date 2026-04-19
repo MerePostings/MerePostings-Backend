@@ -277,6 +277,62 @@ const adminService = {
       throw new AppError(e.message || 'Failed to fetch listings', 500);
     }
   },
+
+  getListingById: async (listingId) => {
+    try {
+      const doc = await db.collection('properties').doc(listingId).get();
+      if (!doc.exists) throw new AppError('Listing not found', 404);
+
+      const d = doc.data();
+      return { id: doc.id, ...d };
+    } catch (e) {
+      throw new AppError(e.message || 'Failed to fetch listing', e.statusCode || 500);
+    }
+  },
+
+  updateListing: async (listingId, payload) => {
+    try {
+      const { Timestamp } = require('firebase-admin/firestore');
+      const { FieldValue } = require('firebase-admin/firestore');
+
+      const clean = (obj) => {
+        if (!obj || typeof obj !== 'object') return obj;
+        return Object.fromEntries(
+          Object.entries(obj)
+            .filter(([_, v]) => v !== undefined)
+            .map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) ? clean(v) : v])
+        );
+      };
+
+      const cleanedPayload = clean(payload);
+
+      await db.collection('properties').doc(listingId).set(
+        { ...cleanedPayload, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+
+      return { success: true };
+    } catch (e) {
+      throw new AppError(e.message || 'Failed to update listing', 500);
+    }
+  },
+
+  updateListingStatus: async (listingId, status) => {
+    try {
+      const { FieldValue } = require('firebase-admin/firestore');
+      const validStatuses = ['draft', 'pending', 'active', 'closed'];
+      if (!validStatuses.includes(status)) throw new AppError('Invalid status', 400);
+
+      await db.collection('properties').doc(listingId).update({
+        status,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return { success: true };
+    } catch (e) {
+      throw new AppError(e.message || 'Failed to update status', 500);
+    }
+  },
 }
 
 module.exports = adminService
