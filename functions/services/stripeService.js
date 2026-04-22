@@ -48,42 +48,25 @@ const stripeService = {
             }
 
             let customerId = userData.stripeCustomerId;
-
             if (!customerId) {
                 customerId = await stripeService.createCustomer(userRef, userEmail);
             }
 
-            const sessionConfig = {
-                payment_method_types: ["card"],
-                mode: "payment",
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: totalCents,
+                currency: 'cad',
                 customer: customerId,
-                line_items: [
-                    {
-                        price_data: {
-                                currency: 'cad',
-                                product_data: {
-                                name: `Mere Postings - Listing`,
-                                description: 'One-time listing creation fee (includes photos & documents)',
-                            },
-                            unit_amount: totalCents,
-                        },
-                        quantity: 1,
-                    },
-                ],
-                payment_intent_data: {
-                    metadata: {
-                        listingId,
-                        userEmail,
-                        firstName,
-                        customerId
-                    },
+                payment_method_types: ['card'],
+                metadata: {
+                    listingId,
+                    userEmail,
+                    firstName,
+                    customerId,
                 },
-                success_url: `${process.env.FRONTEND_URL}/create-listing/success`,
-                cancel_url: `${process.env.FRONTEND_URL}/failure-payment`,
-            };
+                description: 'Mere Postings - One-time listing creation fee',
+            });
 
-            const session = await stripe.checkout.sessions.create(sessionConfig);
-            return session.url;
+            return paymentIntent.client_secret;
 
         } catch(e) {
             console.error(e)

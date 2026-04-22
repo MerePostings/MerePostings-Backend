@@ -256,7 +256,7 @@ const propertyService = {
             const location = propertyData.Location;
 
             const addressName = buildAddressName(location)
-            const listingFolderId = await getOrCreateFolder(null, `${addressName} - ${listingId}`);
+            const listingFolderId = await getOrCreateFolder(null, addressName);
             const subFolderId = await getOrCreateFolder(listingFolderId, mediaType);
             await Promise.all(
                 files.map(async (file, index) => {

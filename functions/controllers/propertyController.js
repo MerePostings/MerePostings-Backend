@@ -52,8 +52,8 @@ const propertyController = {
     }),
 
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
-        const checkoutUrl = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
-        res.status(200).json({checkoutUrl})
+        const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
+        res.status(200).json({clientSecret})
     }),
 
     getOwnerProperties: asyncErrorHandler( async (req, res) => {

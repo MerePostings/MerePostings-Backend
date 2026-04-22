@@ -14,6 +14,7 @@ router.get(
     verifyFirebaseToken,
     propertyController.getListing
 );
+
 router.post(
     "/create-checkout-url/:listingId",
     verifyFirebaseToken,

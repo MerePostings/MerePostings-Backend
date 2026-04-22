@@ -17,6 +17,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://mere-posting-staging.web.app",
+      "https://mere-postings-admin-staging.web.app",
     ],
     credentials: true,
   })
