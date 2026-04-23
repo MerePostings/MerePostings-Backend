@@ -12,6 +12,11 @@ const userController = {
         const result = await userService.getUserById(req.user.uid);
         res.status(200).json({ user: result });
     }),
+
+    getUserTransactions: asyncErrorHandler(async (req, res) => {
+        const transactions = await userService.getUserTransactions(req.user.uid);
+        res.status(200).json({ transactions });
+    })
 }
 
 module.exports = userController
