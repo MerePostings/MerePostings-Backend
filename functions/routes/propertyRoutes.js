@@ -33,4 +33,10 @@ router.post(
     propertyController.uploadMedia
 );
 
+router.delete(
+    "/:listingId/media/:mediaType",
+    verifyFirebaseToken,
+    propertyController.removeMedia
+);
+
 module.exports = router;

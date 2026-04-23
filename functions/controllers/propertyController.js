@@ -51,6 +51,18 @@ const propertyController = {
         busboy.end(req.rawBody);
     }),
 
+    removeMedia: asyncErrorHandler(async (req, res) => {
+        const { listingId, mediaType } = req.params;
+        const { url } = req.query;
+
+        if (!url) {
+            return res.status(400).json({ error: "Missing url in request body" });
+        }
+
+        await propertyService.removeMedia(listingId, mediaType, url);
+        res.status(200).json({ success: true });
+    }),
+
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
         const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
         res.status(200).json({clientSecret})

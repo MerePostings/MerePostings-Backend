@@ -8,8 +8,6 @@ const path = require('path');
 
 const buildAddressName = (location) => {
     try {
-        console.log("here")
-
         const parts = [
             location.streetNumber,
             location.streetName,
@@ -22,7 +20,6 @@ const buildAddressName = (location) => {
             : null;
 
         const municipality = location.municipality ?? null;
-        console.log([parts, unit, municipality].filter(Boolean).join(', '))
         return [parts, unit, municipality].filter(Boolean).join(', ');
     } catch (e) {
         console.log(e)
@@ -282,6 +279,37 @@ const propertyService = {
         }
 
         return mediaUrls;
+    },
+
+    removeMedia: async (listingId, mediaType, mediaUrl) => {
+        if (!['photos', 'attachments'].includes(mediaType)) {
+            throw new AppError("Invalid media type", 400);
+        }
+
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+
+        if (!snap.exists) throw new AppError("Property not found", 404);
+
+        const data = snap.data();
+        const currentMedia = data?.media?.[mediaType] ?? [];
+        const updatedMedia = currentMedia.filter(item => item.url !== mediaUrl);
+
+        await docRef.update({
+            [`media.${mediaType}`]: updatedMedia,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        try {
+            const urlObj = new URL(mediaUrl);
+            const pathMatch = urlObj.pathname.match(/\/v0\/b\/[^/]+\/o\/(.+)/);
+            if (pathMatch) {
+                const filePath = decodeURIComponent(pathMatch[1]);
+                await storage.file(filePath).delete();
+            }
+        } catch (e) {
+            console.error("Storage deletion failed (non-critical):", e.message);
+        }
     },
 
     getListing: async (uid, id) => {
