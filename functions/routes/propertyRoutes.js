@@ -22,6 +22,12 @@ router.post(
 );
 
 router.post(
+    "/request-refund/:listingId",
+    verifyFirebaseToken,
+    propertyController.requestRefund
+);
+
+router.post(
     "/add-property",
     verifyFirebaseToken,
     propertyController.addProperty

@@ -109,6 +109,82 @@ const stripeService = {
         }catch(e){
 
         }
+    },
+
+    requestRefund: async (listingId, uid)=>{
+        try{
+            const propertyRef = db.collection('properties').doc(listingId);
+            const propertySnap = await propertyRef.get();
+
+            if (!propertySnap.exists) {
+                throw new AppError('Listing not found', 400);
+            }
+
+            const listing = propertySnap.data();
+
+            if (listing.ownerId !== uid) {
+                throw new AppError('Unauthorized', 401);
+            }
+
+            if (listing.status === 'refunded') {
+                throw new AppError('This listing has already been refunded', 400);
+            }
+            
+            if (listing.status === 'active' || listing.status === 'closed') {
+                throw new AppError('This listing has already been processed', 400);
+            }
+
+            if (!listing.paid) {
+                throw new AppError('This listing has not been paid for', 400);
+            }
+
+            const snapshot = await db
+                .collection("transactions")
+                .where("listingId", "==", listingId)
+                .orderBy("createdAt", "desc")
+                .get();
+
+            
+            const paymentIntentId = snapshot.docs[0].data().paymentIntentId;
+
+            if (!paymentIntentId) {
+                throw new AppError('Payment reference not found. Please contact support.', 400);
+            }
+
+            const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+            const amountPaid = paymentIntent.amount;
+
+            const refundAmount = amountPaid - parseInt(process.env.ADMIN_FEE_CENTS);
+
+            if (refundAmount <= 0) {
+                throw new AppError(`Amount paid does not exceed the non-refundable admin fee of $${process.env.ADMIN_FEE_CENTS}`, 400);
+            }
+
+            const refund = await stripe.refunds.create({
+                payment_intent: paymentIntentId,
+                amount: refundAmount,
+                reason: 'requested_by_customer',
+            });
+
+            await propertyRef.update({
+                refundedAt: FieldValue.serverTimestamp(),
+                status: 'refunded',
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            await db.collection('transactions').add({
+                customerId: snapshot.docs[0].data().customerId ?? null,
+                listingId,
+                paymentIntentId,
+                refundId: refund.id,
+                amount: -(refundAmount / 100),
+                status: 'refunded',
+                type: 'refund',
+                createdAt: FieldValue.serverTimestamp(),
+            });
+        }catch(e){
+            throw new AppError(e.message || "Failed to process refund", e.statusCode)
+        }
     }
 }
 
