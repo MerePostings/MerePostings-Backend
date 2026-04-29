@@ -68,6 +68,11 @@ const propertyController = {
         res.status(200).json({clientSecret})
     }),
 
+    requestRefund: asyncErrorHandler( async (req, res)=> {
+        await stripeService.requestRefund(req.params.listingId, req.user.uid)
+        res.status(200).json({})
+    }),
+
     getOwnerProperties: asyncErrorHandler( async (req, res) => {
         const properties = await propertyService.getOwnerProperties(req.user.uid)
         res.status(200).json({properties})
