@@ -49,10 +49,14 @@ const userService = {
             const userData = userSnap.data();
             const customerId = userData.stripeCustomerId;
 
+            if(!customerId){
+                return []
+            }
+
             const snapshot = await db
-            .collection("transactions")
-            .where("customerId", "==", customerId)
-            .get();
+                .collection("transactions")
+                .where("customerId", "==", customerId)
+                .get();
 
             const transactions = snapshot.docs.map((doc) => ({
                 type: doc.data().type,
