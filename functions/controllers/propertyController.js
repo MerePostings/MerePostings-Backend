@@ -77,6 +77,23 @@ const propertyController = {
         const properties = await propertyService.getOwnerProperties(req.user.uid)
         res.status(200).json({properties})
     }),
+
+    autoFillField: asyncErrorHandler(async (req, res) => {
+        const { fieldName, fieldTitle, maxLength, propertyData } = req.body;
+
+        if (!fieldName || !fieldTitle || !propertyData) {
+            return res.status(400).json({ error: 'Missing required fields: fieldName, fieldTitle, propertyData' });
+        }
+
+        const generatedText = await propertyService.generateAutoFill(
+            fieldName,
+            fieldTitle,
+            maxLength ?? 2000,
+            propertyData
+        );
+
+        res.status(200).json({ text: generatedText });
+    }),
 }
 
 module.exports = propertyController

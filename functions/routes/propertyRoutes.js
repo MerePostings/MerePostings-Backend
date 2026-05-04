@@ -45,4 +45,10 @@ router.delete(
     propertyController.removeMedia
 );
 
+router.post(
+    "/auto-fill",
+    verifyFirebaseToken,
+    propertyController.autoFillField
+);
+
 module.exports = router;
