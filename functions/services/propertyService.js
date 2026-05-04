@@ -4,6 +4,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { google } = require('googleapis')
 const { Readable } = require('stream');
 const fs = require('fs');
+const Antropic = require('@anthropic-ai/sdk')
 const path = require('path');
 
 const buildAddressName = (location) => {
@@ -375,6 +376,103 @@ const propertyService = {
             console.error("Error in getOwnerProperty:", e);
             throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
         }
+    },
+
+    generateAutoFill: async (fieldName, fieldTitle, maxLength, propertyData) => {
+        const { selectedType, subType, saleType, rooms, sectionValues } = propertyData;
+
+        const formatSectionValues = (sections) => {
+            if (!sections || typeof sections !== 'object') return 'No details provided.';
+
+            return Object.entries(sections)
+                .map(([sectionName, fields]) => {
+                    if (!fields || typeof fields !== 'object') return null;
+
+                    const filledFields = Object.entries(fields)
+                        .filter(([, val]) => {
+                            if (val === null || val === undefined || val === '') return false;
+                            if (Array.isArray(val)) return val.length > 0;
+                            return true;
+                        })
+                        .map(([key, val]) => {
+                            const label = key
+                                .replace(/([A-Z])/g, ' $1')
+                                .replace(/^./, s => s.toUpperCase())
+                                .trim();
+
+                            const display = Array.isArray(val)
+                                ? val.join(', ')
+                                : typeof val === 'boolean'
+                                ? val ? 'Yes' : 'No'
+                                : String(val);
+
+                            return `  • ${label}: ${display}`;
+                        });
+
+                    if (filledFields.length === 0) return null;
+                    return `[${sectionName}]\n${filledFields.join('\n')}`;
+                })
+                .filter(Boolean)
+                .join('\n\n');
+        };
+
+        const formatRooms = (rooms) => {
+            if (!rooms || rooms.length === 0) return null;
+            return rooms
+                .map((r, i) => {
+                    const parts = [
+                        r.roomType && `Type: ${r.roomType}`,
+                        r.roomLevel && `Level: ${r.roomLevel}`,
+                        (r.length && r.width) && `Size: ${r.length} x ${r.width}${r.height ? ` x ${r.height}` : ''}`,
+                        r.descriptionOne,
+                        r.descriptionTwo,
+                        r.descriptionThree,
+                    ].filter(Boolean);
+                    return `  Room ${i + 1}: ${parts.join(' | ')}`;
+                })
+                .join('\n');
+        };
+
+        const formattedSections = formatSectionValues(sectionValues);
+        const formattedRooms = formatRooms(rooms);
+
+        const saleTypeLabel = {
+            sell: 'For Sale',
+            lease: 'For Lease / Rent',
+            assign: 'Assignment Sale',
+        }[saleType] ?? saleType ?? 'Unknown';
+
+        const prompt = `You are an expert Canadian real estate copywriter helping sellers list their properties on MLS.
+
+            Generate compelling "${fieldTitle}" copy for a real estate listing with the following details:
+
+            LISTING TYPE: ${saleTypeLabel}
+            PROPERTY TYPE: ${selectedType ?? 'Unknown'}${subType ? ` — ${subType}` : ''}
+
+            PROPERTY DETAILS:
+            ${formattedSections || 'No additional details provided yet.'}
+            ${formattedRooms ? `\nROOMS:\n${formattedRooms}` : ''}
+
+            RULES:
+            - Maximum ${maxLength} characters (strictly enforced — count carefully)
+            - Write in third person, present tense
+            - Highlight the strongest selling points based on the data above
+            - Use natural, engaging real estate language — not bullet points
+            - Do NOT mention price or address
+            - Do NOT add any preamble, heading, or explanation — return ONLY the description text itself
+        `;
+
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+        const message = await client.messages.create({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }],
+        });
+
+        const text = message.content?.find(b => b.type === 'text')?.text ?? '';
+
+        return text.trim().slice(0, maxLength);
     },
 
 }
