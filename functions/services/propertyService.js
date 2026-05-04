@@ -328,14 +328,21 @@ const propertyService = {
                 throw new AppError("Unauthorized access to this property", 403);
             }
 
-            const snapshot = await db
-                .collection("transactions")
-                .where("listingId", "==", id)
-                .orderBy("createdAt", "desc")
-                .get();
+            let amountPaid;
 
-            
-            const amountPaid = snapshot.docs[0].data().amount;
+            try{
+                const snapshot = await db
+                    .collection("transactions")
+                    .where("listingId", "==", id)
+                    .orderBy("createdAt", "desc")
+                    .get();
+    
+                
+                amountPaid = snapshot.docs[0].data().amount || 400;
+            }catch(e){
+                amountPaid = 0
+            }
+
 
             return {
                 id: docSnap.id,
