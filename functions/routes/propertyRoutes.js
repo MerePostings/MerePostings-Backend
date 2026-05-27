@@ -22,6 +22,12 @@ router.post(
 );
 
 router.post(
+    "/request-refund/:listingId",
+    verifyFirebaseToken,
+    propertyController.requestRefund
+);
+
+router.post(
     "/add-property",
     verifyFirebaseToken,
     propertyController.addProperty
@@ -37,6 +43,12 @@ router.delete(
     "/:listingId/media/:mediaType",
     verifyFirebaseToken,
     propertyController.removeMedia
+);
+
+router.post(
+    "/auto-fill",
+    verifyFirebaseToken,
+    propertyController.autoFillField
 );
 
 module.exports = router;

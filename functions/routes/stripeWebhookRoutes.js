@@ -35,7 +35,7 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
                     
                     await propertyRef.update({
                         paid: true,
-                        status: 'draft',
+                        status: 'pending',
                         updatedAt: FieldValue.serverTimestamp(),
                     });
 
