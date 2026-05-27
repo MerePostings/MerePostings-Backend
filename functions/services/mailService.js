@@ -734,8 +734,251 @@ const meetingScheduled = async (email, name, date, time, link) => {
   });
 };
 
+const guestMeetingRequest = async (email, year, month, day, time) => {
+  const dateStr = new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+ 
+  client.sendEmail({
+    From: `${process.env.EMAILUSER}`,
+    To: "support@torontorealestaterealty.com",
+    Subject: `New Guest Meeting Request — ${dateStr} at ${time}`,
+    HtmlBody: `
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body style="margin:0;padding:0;background-color:#F4F4F4;font-family:'Open Sans',sans-serif;">
+ 
+  <!-- Outer wrapper -->
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#F4F4F4;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+ 
+        <!-- Email shell: all sections share this 600px table so widths always match -->
+        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+ 
+          <!-- HEADER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+              <a href="${process.env.FRONTEND_URL}"
+                style="text-decoration:none;font-family:'Playfair Display',serif;font-size:32px;font-weight:600;letter-spacing:0.02em;color:#ffffff;">
+                <span style="color:#154360;">Mere</span>Postings
+              </a>
+            </td>
+          </tr>
+ 
+          <!-- BODY -->
+          <tr>
+            <td style="background:#ffffff;padding:36px 40px;">
+              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">📅 New Guest Meeting Request</h2>
+              <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
+                A guest has requested a meeting. Details are below.
+              </p>
+ 
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Date</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${dateStr}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;">Time</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${time}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;font-weight:600;">Guest Email</td>
+                  <td style="padding:10px 0;">
+                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+ 
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:16px 40px;text-align:center;border-radius:0 0 8px 8px;">
+              <p style="color:#e9e9e9;font-size:12px;margin:0;font-family:'Open Sans',sans-serif;">© 2025 Mere Postings. All rights reserved.</p>
+            </td>
+          </tr>
+ 
+        </table>
+      </td>
+    </tr>
+  </table>
+ 
+</body>
+</html>`,
+    MessageStream: "notifications",
+  });
+};
+ 
+// ── 2. Callback request notification ─────────────────────────────────────────
+const callbackRequest = async (email, time, subject) => {
+  client.sendEmail({
+    From: `${process.env.EMAILUSER}`,
+    To: "support@torontorealestaterealty.com",
+    Subject: `New Callback Request${subject ? ` — ${subject}` : ""}`,
+    HtmlBody: `
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body style="margin:0;padding:0;background-color:#F4F4F4;font-family:'Open Sans',sans-serif;">
+ 
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#F4F4F4;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+ 
+        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+ 
+          <!-- HEADER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+              <a href="${process.env.FRONTEND_URL}"
+                style="text-decoration:none;font-family:'Playfair Display',serif;font-size:32px;font-weight:600;letter-spacing:0.02em;color:#ffffff;">
+                <span style="color:#154360;">Mere</span>Postings
+              </a>
+            </td>
+          </tr>
+ 
+          <!-- BODY -->
+          <tr>
+            <td style="background:#ffffff;padding:36px 40px;">
+              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">📞 New Callback Request</h2>
+              <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
+                Someone has requested a callback. Details are below.
+              </p>
+ 
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Email</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">
+                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;border-bottom:${subject ? "1px solid #eeeeee" : "none"};font-weight:600;">Preferred Time</td>
+                  <td style="padding:10px 0;border-bottom:${subject ? "1px solid #eeeeee" : "none"};">${time}</td>
+                </tr>
+                ${subject ? `
+                <tr>
+                  <td style="padding:10px 0;font-weight:600;">Subject</td>
+                  <td style="padding:10px 0;">${subject}</td>
+                </tr>` : ""}
+              </table>
+            </td>
+          </tr>
+ 
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:16px 40px;text-align:center;border-radius:0 0 8px 8px;">
+              <p style="color:#e9e9e9;font-size:12px;margin:0;font-family:'Open Sans',sans-serif;">© 2025 Mere Postings. All rights reserved.</p>
+            </td>
+          </tr>
+ 
+        </table>
+      </td>
+    </tr>
+  </table>
+ 
+</body>
+</html>`,
+    MessageStream: "notifications",
+  });
+};
+ 
+// ── 3. Send-a-message notification ───────────────────────────────────────────
+const contactMessage = async (name, email, message) => {
+  client.sendEmail({
+    From: `${process.env.EMAILUSER}`,
+    To: "support@torontorealestaterealty.com",
+    Subject: `New Message from ${name}`,
+    HtmlBody: `
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body style="margin:0;padding:0;background-color:#F4F4F4;font-family:'Open Sans',sans-serif;">
+ 
+  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#F4F4F4;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+ 
+        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+ 
+          <!-- HEADER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+              <a href="${process.env.FRONTEND_URL}"
+                style="text-decoration:none;font-family:'Playfair Display',serif;font-size:32px;font-weight:600;letter-spacing:0.02em;color:#ffffff;">
+                <span style="color:#154360;">Mere</span>Postings
+              </a>
+            </td>
+          </tr>
+ 
+          <!-- BODY -->
+          <tr>
+            <td style="background:#ffffff;padding:36px 40px;">
+              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">✉️ New Contact Message</h2>
+              <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
+                You've received a new message through the contact form.
+              </p>
+ 
+              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Name</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${name}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;">Email</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">
+                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;font-weight:600;vertical-align:top;">Message</td>
+                  <td style="padding:10px 0;line-height:1.7;white-space:pre-wrap;">${message}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+ 
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#7a8c6e;padding:16px 40px;text-align:center;border-radius:0 0 8px 8px;">
+              <p style="color:#e9e9e9;font-size:12px;margin:0;font-family:'Open Sans',sans-serif;">© 2025 Mere Postings. All rights reserved.</p>
+            </td>
+          </tr>
+ 
+        </table>
+      </td>
+    </tr>
+  </table>
+ 
+</body>
+</html>`,
+    MessageStream: "notifications",
+  });
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPaymentConfirmationEmail,
-  meetingScheduled
+  meetingScheduled,
+  guestMeetingRequest,
+  callbackRequest,
+  contactMessage
 };
