@@ -1,6 +1,9 @@
 require("dotenv").config();
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
+const archiver = require('archiver');
+const axios = require('axios');
+const { PassThrough } = require('stream');
 
 const adminService = {
   handleAdminLogin: async (email) => {
@@ -242,6 +245,7 @@ const adminService = {
           .join(' ') || 'Unlisted Property';
 
         const photos = d.media?.photos || [];
+        console.log('Photos for listing', photos.length);
         const thumbnail = photos[0]?.url || null;
 
         return {
@@ -249,9 +253,9 @@ const adminService = {
           status: d.status || 'pending',
           title,
           address,
-          propertyType: d.propertyType || '',   // residential / commercial
-          subType: d.subType || '',              // Detached / Condo / Duplex etc.
-          saleType: d.saleType || '',            // sell / rent
+          propertyType: d.propertyType || '',
+          subType: d.subType || '',         
+          saleType: d.saleType || '',
           listPrice: d.contractCommencement?.listPrice || '',
           thumbnail,
           updatedAt: d.updatedAt?.toDate().toISOString() || null,
@@ -347,6 +351,95 @@ const adminService = {
     }
   },
 
+  downloadPropertyAsZip: async (listingId) => {
+    try {
+      const docRef = db.collection("properties").doc(listingId);
+      const docSnap = await docRef.get();
+
+      if (!docSnap.exists) {
+        throw new AppError("Property not found", 404);
+      }
+
+      const data = docSnap.data();
+
+      const loc = data.Location || {};
+      const addressParts = [
+        loc.streetNumber,
+        loc.streetName,
+        loc.streetDirection,
+        loc.apartmentUnitNumber ? `Unit ${loc.apartmentUnitNumber}` : null,
+        loc.municipality,
+        loc.area,
+      ].filter(Boolean);
+      const address = addressParts.join(' ') || 'unknown-address';
+
+      const safeAddress = address.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+      const uid = data.uid || data.userId || listingId;
+      const folderName = `${safeAddress} - ${uid}`;
+
+      const zipStream = new PassThrough();
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      archive.pipe(zipStream);
+
+      const photos = data.media?.photos || [];
+      if (photos.length > 0) {
+        for (let i = 0; i < photos.length; i++) {
+          try {
+            const photo = photos[i];
+            const imageUrl = photo.url;
+
+            if (imageUrl) {
+              const response = await axios.get(imageUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000
+              });
+
+              archive.append(Buffer.from(response.data), {
+                name: `${folderName}/photos/photo_${i + 1}.jpg`
+              });
+            }
+          } catch (error) {
+            console.warn(`Failed to download photo ${i + 1}:`, error.message);
+          }
+        }
+      }
+
+      const documents = data.media?.attachments || [];
+      if (documents.length > 0) {
+        for (let i = 0; i < documents.length; i++) {
+          try {
+            const doc = documents[i];
+            const docUrl = doc.url;
+
+            if (docUrl) {
+              const response = await axios.get(docUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000
+              });
+
+              const ext = doc.name ? doc.name.split('.').pop() : 'pdf';
+              const filename = doc.name || `document_${i + 1}.${ext}`;
+
+              archive.append(Buffer.from(response.data), {
+                name: `${folderName}/documents/${filename}`
+              });
+            }
+          } catch (error) {
+            console.warn(`Failed to download document ${i + 1}:`, error.message);
+          }
+        }
+      }
+
+      await archive.finalize();
+
+      return { folderName, zipStream };
+
+    } catch (e) {
+      console.error("Error in downloadPropertyAsZip:", e);
+      throw new AppError(`Failed to create property zip: ${e.message}`, 500);
+    }
+  },
 }
 
 module.exports = adminService
