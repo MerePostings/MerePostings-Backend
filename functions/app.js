@@ -15,10 +15,9 @@ const handleError = require('./middlewares/errorHandler')
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",
-      "https://mere-posting-staging.web.app",
-      "https://mere-postings-admin-staging.web.app",
+      `${process.env.FRONTEND_URL}`,
     ],
+    exposedHeaders: ['X-Zip-Filename'],
     credentials: true,
   })
 );
