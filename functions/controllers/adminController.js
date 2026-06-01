@@ -50,6 +50,24 @@ const adminController = {
     res.status(200).json(result);
   }),
 
+  downloadPropertyZip: asyncErrorHandler(async (req, res) => {
+    const { listingId } = req.params;
+    const { folderName, zipStream } = await adminService.downloadPropertyAsZip(listingId);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${folderName}.zip"`);
+    res.setHeader('X-Zip-Filename', `${folderName}.zip`);
+
+    zipStream.pipe(res);
+
+    zipStream.on('error', (err) => {
+      console.error('Zip stream error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to download property zip' });
+      }
+    });
+  }),
+
 }
 
 module.exports = adminController;

@@ -1,7 +1,6 @@
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
-const { google } = require('googleapis')
 const { Readable } = require('stream');
 const fs = require('fs');
 const Antropic = require('@anthropic-ai/sdk')
@@ -180,103 +179,6 @@ const propertyService = {
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
-        }
-
-        try {
-
-            if (!process.env.SIGNATURE) {
-                return mediaUrls;
-            }
-
-            const sharedDriveId = process.env.GOOGLE_DRIVE_SHARED_DRIVE_ID;
-            if (!sharedDriveId) {
-                return mediaUrls;
-            }
-
-            const keyPath = process.env.SIGNATURE.startsWith('/')
-                ? process.env.SIGNATURE
-                : path.resolve(process.cwd(), process.env.SIGNATURE);
-
-            const auth = new google.auth.GoogleAuth({
-                keyFilename: keyPath,
-                scopes: ['https://www.googleapis.com/auth/drive'],
-            });
-
-            const drive = google.drive({ version: 'v3', auth });
-
-            await drive.drives.get({
-                driveId: sharedDriveId,
-                fields: 'id,name',
-                useDomainAdminAccess: false,
-            });
-
-            const safeQ = (s) => s.replace(/'/g, "\\'");
-
-            const getOrCreateFolder = async (parentId, folderName) => {
-                const q = parentId
-                    ? `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
-                    : `name='${safeQ(folderName)}' and mimeType='application/vnd.google-apps.folder' and '${sharedDriveId}' in parents and trashed=false`;
-
-                const res = await drive.files.list({
-                    q,
-                    fields: 'files(id,name)',
-                    supportsAllDrives: true,
-                    includeItemsFromAllDrives: true,
-                    corpora: 'drive',
-                    driveId: sharedDriveId,
-                });
-
-                if (res.data.files?.length) return res.data.files[0].id;
-
-                const folderMetadata = {
-                    name: folderName,
-                    mimeType: 'application/vnd.google-apps.folder',
-                    parents: [parentId || sharedDriveId],
-                };
-
-                const folder = await drive.files.create({
-                    requestBody: folderMetadata,
-                    fields: 'id',
-                    supportsAllDrives: true,
-                });
-
-                return folder.data.id;
-            };
-
-            const propertyRef = db.collection("properties").doc(listingId);
-            const propertySnap = await propertyRef.get();
-
-            if (!propertySnap.exists) {
-                throw new Error("User document not found");
-            }
-
-            const propertyData = propertySnap.data();
-            const location = propertyData.Location;
-
-            const addressName = buildAddressName(location)
-            const listingFolderId = await getOrCreateFolder(null, addressName);
-            const subFolderId = await getOrCreateFolder(listingFolderId, mediaType);
-            await Promise.all(
-                files.map(async (file, index) => {
-                    const uploaded = await drive.files.create({
-                        requestBody: {
-                            name: `${index + 1}`,
-                            parents: [subFolderId],
-                        },
-                        media: {
-                            mimeType: file.mimetype,
-                            body: Readable.from(file.buffer),
-                        },
-                        fields: 'id, webViewLink',
-                        supportsAllDrives: true,
-                    });
-
-                    return uploaded.data;
-                })
-            );
-
-        } catch (driveErr) {
-            if (driveErr.response) console.error('Status:', driveErr.response.status);
         }
 
         return mediaUrls;
@@ -474,6 +376,7 @@ const propertyService = {
 
         return text.trim().slice(0, maxLength);
     },
+
 
 }
 module.exports = propertyService
