@@ -1,5 +1,6 @@
 const express = require("express");
 const adminController = require("../controllers/adminController");
+const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyAdminFirebaseToken = require("../middlewares/verifyAdminFirebaseToken");
 
@@ -16,5 +17,7 @@ router.get('/listings/:listingId',      adminController.getListingById);
 router.patch('/listings/:listingId',              adminController.updateListing);
 router.patch('/listings/:listingId/status',       adminController.updateListingStatus);
 router.patch('/listings/:listingId/tracking',     adminController.updateTrackingStep);
+router.post('/:listingId/media/:mediaType',         propertyController.uploadMedia);
+router.delete('/:listingId/media/:mediaType',       propertyController.removeMedia);
 
 module.exports = router;
