@@ -63,6 +63,18 @@ const propertyController = {
         res.status(200).json({ success: true });
     }),
 
+    reorderMedia: asyncErrorHandler(async (req, res) => {
+        const { listingId, mediaType } = req.params;
+        const { urls } = req.body;
+ 
+        if (!Array.isArray(urls) || urls.length === 0) {
+            return res.status(400).json({ error: "urls must be a non-empty array" });
+        }
+ 
+        const media = await propertyService.reorderMedia(listingId, mediaType, urls);
+        res.status(200).json({ success: true, media });
+    }),
+
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
         const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
         res.status(200).json({clientSecret})

@@ -19,5 +19,6 @@ router.patch('/listings/:listingId/status',       adminController.updateListingS
 router.patch('/listings/:listingId/tracking',     adminController.updateTrackingStep);
 router.post('/:listingId/media/:mediaType',         propertyController.uploadMedia);
 router.delete('/:listingId/media/:mediaType',       propertyController.removeMedia);
+router.patch('/:listingId/media/:mediaType/reorder',propertyController.reorderMedia);
 
 module.exports = router;

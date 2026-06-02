@@ -39,6 +39,12 @@ router.post(
     propertyController.uploadMedia
 );
 
+router.patch(
+    "/:listingId/media/:mediaType/reorder",
+    verifyFirebaseToken,
+    propertyController.reorderMedia
+);
+
 router.delete(
     "/:listingId/media/:mediaType",
     verifyFirebaseToken,

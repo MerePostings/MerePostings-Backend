@@ -377,6 +377,43 @@ const propertyService = {
         return text.trim().slice(0, maxLength);
     },
 
+    reorderMedia: async (listingId, mediaType, urls) => {
+        try{
+            if (!['photos', 'attachments'].includes(mediaType)) {
+                throw new AppError('Invalid media type', 400);
+            }
+            
+            if (!Array.isArray(urls) || urls.length === 0) {
+                throw new AppError('urls must be a non-empty array', 400);
+            }
+        
+            const docRef = db.collection('properties').doc(listingId);
+            const snap   = await docRef.get();
+        
+            if (!snap.exists) throw new AppError('Property not found', 404);
+        
+            const currentMedia = snap.data()?.media?.[mediaType] ?? [];
+        
+            const mediaByUrl = new Map(currentMedia.map(item => [item.url, item]));
+        
+            const reordered = urls
+                .filter(url => mediaByUrl.has(url))
+                .map(url => mediaByUrl.get(url));
+        
+            const urlSet = new Set(urls);
+            const orphans = currentMedia.filter(item => !urlSet.has(item.url));
+            const finalMedia = [...reordered, ...orphans];
+        
+            await docRef.update({
+                [`media.${mediaType}`]: finalMedia,
+                updatedAt:              FieldValue.serverTimestamp(),
+            });
+        
+            return finalMedia;
+        }catch(e){
+            throw new AppError(e.message || "Failed to reorder media", 500);
+        }
+    },
 
 }
 module.exports = propertyService
