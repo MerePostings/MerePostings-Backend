@@ -2,10 +2,14 @@ const express = require("express");
 const userController = require("../controllers/userController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
+const handleValidationErrors = require("../middlewares/handleValidationErrors");
+const { updateUserProfileValidator } = require("../validators/userValidator");
 
 router.put(
     "/update-user",
     verifyFirebaseToken,
+    updateUserProfileValidator,
+    handleValidationErrors,
     userController.updateUserProfile
 );
 

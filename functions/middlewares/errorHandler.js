@@ -7,7 +7,6 @@ const devError = (err, res) => {
 }
 
 const prodError = (err, res) => {
-    console.log(err)
     if(err.isOperational){
         res.status(err.statusCode).json({
             message: err.message
@@ -20,7 +19,6 @@ const prodError = (err, res) => {
 }
 
 const handleError = (err, req, res, next) => {
-
     err.statusCode = err.statusCode || 500
     
     if(process.env.NODE_ENV === 'development'){
