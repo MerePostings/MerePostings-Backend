@@ -10,6 +10,12 @@ router.get(
 );
 
 router.get(
+    "/get-owner-most-recent-property",
+    verifyFirebaseToken,
+    propertyController.getOwnerMostRecentProperty
+);
+
+router.get(
     "/listings/:id",
     verifyFirebaseToken,
     propertyController.getListing

@@ -415,5 +415,50 @@ const propertyService = {
         }
     },
 
+    getOwnerMostRecentProperty: async (uid) => {
+        try {
+            const snapshot = await db
+                .collection("properties")
+                .where("ownerId", "==", uid)
+                .orderBy("updatedAt", "desc")
+                .get();
+
+            if (snapshot.empty) {
+                return {
+                    property: null,
+                    stats: { active: 0, draft: 0, closed: 0, pending: 0 },
+                };
+            }
+
+            const properties = snapshot.docs.map((doc) => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+                };
+            });
+
+            const stats = properties.reduce(
+                (acc, property) => {
+                    const status = property.status;
+                    if (acc[status] !== undefined) {
+                        acc[status] += 1;
+                    }
+                    return acc;
+                },
+                { active: 0, draft: 0, closed: 0, pending: 0 }
+            );
+
+            return {
+                property: properties[0], // most recent, since ordered by updatedAt desc
+                stats,
+            };
+        } catch (e) {
+            console.error("Error in getOwnerMostRecentProperty:", e);
+            throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
+        }
+    },
+
 }
 module.exports = propertyService

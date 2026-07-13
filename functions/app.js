@@ -16,6 +16,8 @@ app.use(
   cors({
     origin: [
       `${process.env.FRONTEND_URL}`,
+      'https://mere-postings-admin-staging.web.app',
+      'https://mere-posting-staging.web.app',
     ],
     exposedHeaders: ['X-Zip-Filename'],
     credentials: true,
