@@ -106,6 +106,14 @@ const propertyController = {
 
         res.status(200).json({ text: generatedText });
     }),
+
+    getOwnerMostRecentProperty: asyncErrorHandler(async (req, res) => {
+        const result = await propertyService.getOwnerMostRecentProperty(req.user.uid);
+        res.status(200).json({
+            property: result.property,
+            stats: result.stats
+        });
+    }),
 }
 
 module.exports = propertyController
