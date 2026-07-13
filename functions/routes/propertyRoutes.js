@@ -2,6 +2,9 @@ const express = require("express");
 const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
+const validate = require("../middlewares/validate");
+const validateDraftField = require("../middlewares/validateDraftField");
+const { initiatePropertySchema } = require("../validators/property/schemas.js");
 
 router.get(
     "/get-owner-properties",
@@ -22,6 +25,20 @@ router.get(
 );
 
 router.post(
+    "/initiate",
+    verifyFirebaseToken,
+    validate(initiatePropertySchema),
+    propertyController.initiateProperty
+);
+
+router.patch(
+    "/:listingId/draft-field",
+    verifyFirebaseToken,
+    validateDraftField,
+    propertyController.saveDraftField
+);
+
+router.post(
     "/create-checkout-url/:listingId",
     verifyFirebaseToken,
     propertyController.stripeCheckoutSessionForCreateListing
@@ -33,6 +50,7 @@ router.post(
     propertyController.requestRefund
 );
 
+// LEGACY — kept for backward compatibility, see propertyController.addProperty
 router.post(
     "/add-property",
     verifyFirebaseToken,
@@ -55,12 +73,6 @@ router.delete(
     "/:listingId/media/:mediaType",
     verifyFirebaseToken,
     propertyController.removeMedia
-);
-
-router.post(
-    "/auto-fill",
-    verifyFirebaseToken,
-    propertyController.autoFillField
 );
 
 module.exports = router;

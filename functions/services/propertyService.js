@@ -33,6 +33,10 @@ const propertyService = {
      * - Removes any key literally named "undefined"
      * - Removes any top-level keys that have undefined values
      * - Cleans inside sectionValues and all section objects
+     *
+     * NOTE: only used by the legacy addProperty/saveProperty flow below.
+     * The new draft-field flow validates+writes one field at a time, so
+     * there's no bulk payload left to sanitize.
      */
     cleanPayload: (payload) => {
         if (!payload || typeof payload !== 'object') return payload;
@@ -80,11 +84,9 @@ const propertyService = {
     },
 
     /**
-     * Creates a new property listing in Firestore
-     * - Cleans the payload before saving
-     * - Skips creation if a listingId already exists (idempotent)
-     * - Saves core property fields and all sectionValues to the document
-     * - Sets initial status as 'draft' and paid as false
+     * LEGACY — full-payload create/update, kept for backward compatibility
+     * while the frontend migrates to initiateProperty() + saveDraftField().
+     * Safe to delete once nothing calls POST /add-property anymore.
      */
     saveProperty: async (userId, payload) => {
         const cleanData = propertyService.cleanPayload(payload);
@@ -127,6 +129,95 @@ const propertyService = {
         } catch (e) {
             console.error("Error saving property:", e);
             throw new AppError("Failed to save Property", 500);
+        }
+    },
+
+    /**
+     * STAGE 1 — Initiation.
+     * Creates a bare-bones property doc as soon as the user lands on the
+     * listing-creation page, before any form fields are known. Returns the
+     * listingId the frontend will attach to every subsequent draft-field call.
+     */
+    initiateProperty: async (userId, { occupancyType }) => {
+        try {
+            const listingRef = await db.collection('properties').add({
+                ownerId: userId,
+                occupancyType,
+                status: 'initiated',
+                paid: false,
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            return listingRef.id;
+        } catch (e) {
+            console.error("Error initiating property:", e);
+            throw new AppError("Failed to initiate property", 500);
+        }
+    },
+
+    /**
+     * STAGE 2 — Draft auto-save, one field at a time.
+     * `field` is the object attached by middlewares/validateDraftField.js:
+     *   { propertyType, fieldName, fieldValue, path, dbKey }
+     */
+    saveDraftField: async (userId, listingId, field) => {
+        const { propertyType, fieldName, fieldValue, path: sectionPath, dbKey } = field;
+
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            throw new AppError("Property not found", 404);
+        }
+
+        const existing = snap.data();
+
+        if (existing.ownerId !== userId) {
+            throw new AppError("Unauthorized access to this property", 403);
+        }
+
+        if (existing.status === 'submitted') {
+            throw new AppError("Cannot edit a listing that has already been submitted", 409);
+        }
+
+        if (existing.propertyType && existing.propertyType !== propertyType) {
+            throw new AppError(
+                `Property type mismatch: listing is "${existing.propertyType}" but request sent "${propertyType}"`,
+                409
+            );
+        }
+
+        const firestoreKey = sectionPath === 'top' ? dbKey : `${sectionPath}.${dbKey}`;
+
+        try {
+            await docRef.update({
+                [firestoreKey]: fieldValue,
+                status: 'draft',
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error saving draft field:", e);
+            throw new AppError("Failed to save field", 500);
+        }
+
+        return { [fieldName]: fieldValue };
+    },
+
+    /**
+     * STAGE 3 — Submission.
+     * Call this from wherever payment success is confirmed 
+     */
+    markSubmitted: async (listingId) => {
+        try {
+            await db.collection('properties').doc(listingId).update({
+                status: 'submitted',
+                paid: true,
+                submittedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error marking property submitted:", e);
         }
     },
 
@@ -278,103 +369,6 @@ const propertyService = {
             console.error("Error in getOwnerProperty:", e);
             throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
         }
-    },
-
-    generateAutoFill: async (fieldName, fieldTitle, maxLength, propertyData) => {
-        const { selectedType, subType, saleType, rooms, sectionValues } = propertyData;
-
-        const formatSectionValues = (sections) => {
-            if (!sections || typeof sections !== 'object') return 'No details provided.';
-
-            return Object.entries(sections)
-                .map(([sectionName, fields]) => {
-                    if (!fields || typeof fields !== 'object') return null;
-
-                    const filledFields = Object.entries(fields)
-                        .filter(([, val]) => {
-                            if (val === null || val === undefined || val === '') return false;
-                            if (Array.isArray(val)) return val.length > 0;
-                            return true;
-                        })
-                        .map(([key, val]) => {
-                            const label = key
-                                .replace(/([A-Z])/g, ' $1')
-                                .replace(/^./, s => s.toUpperCase())
-                                .trim();
-
-                            const display = Array.isArray(val)
-                                ? val.join(', ')
-                                : typeof val === 'boolean'
-                                ? val ? 'Yes' : 'No'
-                                : String(val);
-
-                            return `  • ${label}: ${display}`;
-                        });
-
-                    if (filledFields.length === 0) return null;
-                    return `[${sectionName}]\n${filledFields.join('\n')}`;
-                })
-                .filter(Boolean)
-                .join('\n\n');
-        };
-
-        const formatRooms = (rooms) => {
-            if (!rooms || rooms.length === 0) return null;
-            return rooms
-                .map((r, i) => {
-                    const parts = [
-                        r.roomType && `Type: ${r.roomType}`,
-                        r.roomLevel && `Level: ${r.roomLevel}`,
-                        (r.length && r.width) && `Size: ${r.length} x ${r.width}${r.height ? ` x ${r.height}` : ''}`,
-                        r.descriptionOne,
-                        r.descriptionTwo,
-                        r.descriptionThree,
-                    ].filter(Boolean);
-                    return `  Room ${i + 1}: ${parts.join(' | ')}`;
-                })
-                .join('\n');
-        };
-
-        const formattedSections = formatSectionValues(sectionValues);
-        const formattedRooms = formatRooms(rooms);
-
-        const saleTypeLabel = {
-            sell: 'For Sale',
-            lease: 'For Lease / Rent',
-            assign: 'Assignment Sale',
-        }[saleType] ?? saleType ?? 'Unknown';
-
-        const prompt = `You are an expert Canadian real estate copywriter helping sellers list their properties on MLS.
-
-            Generate compelling "${fieldTitle}" copy for a real estate listing with the following details:
-
-            LISTING TYPE: ${saleTypeLabel}
-            PROPERTY TYPE: ${selectedType ?? 'Unknown'}${subType ? ` — ${subType}` : ''}
-
-            PROPERTY DETAILS:
-            ${formattedSections || 'No additional details provided yet.'}
-            ${formattedRooms ? `\nROOMS:\n${formattedRooms}` : ''}
-
-            RULES:
-            - Maximum ${maxLength} characters (strictly enforced — count carefully)
-            - Write in third person, present tense
-            - Highlight the strongest selling points based on the data above
-            - Use natural, engaging real estate language — not bullet points
-            - Do NOT mention price or address
-            - Do NOT add any preamble, heading, or explanation — return ONLY the description text itself
-        `;
-
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-        const message = await client.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: prompt }],
-        });
-
-        const text = message.content?.find(b => b.type === 'text')?.text ?? '';
-
-        return text.trim().slice(0, maxLength);
     },
 
     reorderMedia: async (listingId, mediaType, urls) => {

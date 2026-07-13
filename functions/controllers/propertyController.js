@@ -4,6 +4,19 @@ const stripeService = require('../services/stripeService');
 const Busboy = require("busboy");
 
 const propertyController = {
+
+    initiateProperty: asyncErrorHandler(async (req, res) => {
+        const listingId = await propertyService.initiateProperty(req.user.uid, req.body);
+        res.status(201).json({ listingId });
+    }),
+
+    saveDraftField: asyncErrorHandler(async (req, res) => {
+        const { listingId } = req.params;
+        const field = await propertyService.saveDraftField(req.user.uid, listingId, req.validatedField);
+        res.status(200).json({ success: true, field });
+    }),
+
+    // LEGACY — kept for backward compatibility, see propertyService.saveProperty
     addProperty: asyncErrorHandler(async(req, res)=>{
         const listingId = await propertyService.saveProperty(req.user.uid, req.body);
         res.status(200).json({listingId});
@@ -88,23 +101,6 @@ const propertyController = {
     getOwnerProperties: asyncErrorHandler( async (req, res) => {
         const properties = await propertyService.getOwnerProperties(req.user.uid)
         res.status(200).json({properties})
-    }),
-
-    autoFillField: asyncErrorHandler(async (req, res) => {
-        const { fieldName, fieldTitle, maxLength, propertyData } = req.body;
-
-        if (!fieldName || !fieldTitle || !propertyData) {
-            return res.status(400).json({ error: 'Missing required fields: fieldName, fieldTitle, propertyData' });
-        }
-
-        const generatedText = await propertyService.generateAutoFill(
-            fieldName,
-            fieldTitle,
-            maxLength ?? 2000,
-            propertyData
-        );
-
-        res.status(200).json({ text: generatedText });
     }),
 
     getOwnerMostRecentProperty: asyncErrorHandler(async (req, res) => {
