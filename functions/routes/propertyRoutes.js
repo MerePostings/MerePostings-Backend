@@ -4,7 +4,10 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const validateDraftField = require("../middlewares/validateDraftField");
-const { initiatePropertySchema } = require("../validators/property/schemas.js");
+const {
+    initiatePropertySchema,
+    listingProcessPatchSchema,
+} = require("../validators/property/schemas.js");
 
 router.get(
     "/get-owner-properties",
@@ -19,6 +22,12 @@ router.get(
 );
 
 router.get(
+    "/get-owner-most-recent-process",
+    verifyFirebaseToken,
+    propertyController.getOwnerMostRecentProcess
+);
+
+router.get(
     "/listings/:id",
     verifyFirebaseToken,
     propertyController.getListing
@@ -29,6 +38,19 @@ router.post(
     verifyFirebaseToken,
     validate(initiatePropertySchema),
     propertyController.initiateProperty
+);
+
+router.get(
+    "/:listingId/listing-process",
+    verifyFirebaseToken,
+    propertyController.getListingProcess
+);
+
+router.patch(
+    "/:listingId/listing-process",
+    verifyFirebaseToken,
+    validate(listingProcessPatchSchema),
+    propertyController.saveListingProcess
 );
 
 router.patch(
