@@ -29,7 +29,27 @@ const stripeService = {
      * - Attaches listingId, userEmail, and firstName to the PaymentIntent metadata for webhook processing
      * - Returns the Stripe Checkout URL to redirect the user to
      */
-    stripeCheckoutSessionForCreateListing: async (listingId, uid, { saleType, selectedAddons}) => {
+    stripeCheckoutSessionForCreateListing: async (listingId, uid, body = {}) => {
+        let { saleType, selectedAddons } = body || {};
+
+        // Prefer process document as source of truth when body omits addons/saleType
+        try {
+            const procSnap = await db.collection('listingProcesses').doc(listingId).get();
+            if (procSnap.exists) {
+                const proc = procSnap.data();
+                const state = proc.state || {};
+                if (!Array.isArray(selectedAddons) || selectedAddons.length === 0) {
+                    selectedAddons = state.selectedAddons || proc.selectedAddons || [];
+                }
+                if (!saleType) saleType = state.saleType || proc.saleType || 'sell';
+            }
+        } catch (e) {
+            console.error('Failed to read listing process for checkout', e);
+        }
+
+        saleType = saleType || 'sell';
+        selectedAddons = selectedAddons || [];
+
         const { totalCents } = calculateListingPrice(saleType, selectedAddons)
         try{
             const userRef = db.collection("users").doc(uid);

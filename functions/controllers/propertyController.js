@@ -110,6 +110,25 @@ const propertyController = {
             stats: result.stats
         });
     }),
+
+    getListingProcess: asyncErrorHandler(async (req, res) => {
+        const process = await propertyService.getListingProcess(req.user.uid, req.params.listingId);
+        res.status(200).json({ process });
+    }),
+
+    saveListingProcess: asyncErrorHandler(async (req, res) => {
+        const process = await propertyService.saveListingProcess(
+            req.user.uid,
+            req.params.listingId,
+            req.body
+        );
+        res.status(200).json({ process });
+    }),
+
+    getOwnerMostRecentProcess: asyncErrorHandler(async (req, res) => {
+        const result = await propertyService.getOwnerMostRecentProcess(req.user.uid);
+        res.status(200).json(result);
+    }),
 }
 
 module.exports = propertyController
