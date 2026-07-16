@@ -5,6 +5,7 @@ const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
 const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
+const { projectStateToProperty } = require('../utils/projectListingState');
 
 const buildAddressName = (location) => {
     try {
@@ -134,30 +135,187 @@ const propertyService = {
 
     /**
      * STAGE 1 — Initiation.
-     * Creates a bare-bones property doc as soon as the user lands on the
-     * listing-creation page, before any form fields are known. Returns the
-     * listingId the frontend will attach to every subsequent draft-field call.
+     * Creates properties/{id} + listingProcesses/{id}. occupancyType optional.
      */
-    initiateProperty: async (userId, { occupancyType }) => {
+    initiateProperty: async (userId, body = {}) => {
+        const { occupancyType } = body || {};
         try {
-            const listingRef = await db.collection('properties').add({
+            const propertyData = {
                 ownerId: userId,
-                occupancyType,
                 status: 'initiated',
                 paid: false,
                 createdAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
+            };
+            if (occupancyType) propertyData.occupancyType = occupancyType;
+
+            const listingRef = await db.collection('properties').add(propertyData);
+            const listingId = listingRef.id;
+
+            await db.collection('listingProcesses').doc(listingId).set({
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: 0,
+                state: occupancyType
+                    ? {
+                        occupancy:
+                            occupancyType === 'owner_occupied'
+                                ? 'owner'
+                                : occupancyType === 'tenant_occupied'
+                                    ? 'tenant'
+                                    : 'vacant',
+                    }
+                    : {},
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
             });
 
-            return listingRef.id;
+            return listingId;
         } catch (e) {
             console.error("Error initiating property:", e);
             throw new AppError("Failed to initiate property", 500);
         }
     },
 
+    getListingProcess: async (userId, listingId) => {
+        const propSnap = await db.collection('properties').doc(listingId).get();
+        if (!propSnap.exists) throw new AppError('Property not found', 404);
+        const prop = propSnap.data();
+        if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
+
+        const procSnap = await db.collection('listingProcesses').doc(listingId).get();
+        if (!procSnap.exists) {
+            // Backfill empty process for older properties
+            const empty = {
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: 0,
+                state: {},
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            };
+            await db.collection('listingProcesses').doc(listingId).set(empty);
+            return {
+                listingId,
+                furthestMajorIndex: 0,
+                state: {},
+                propertyStatus: prop.status,
+            };
+        }
+
+        const data = procSnap.data();
+        return {
+            listingId,
+            furthestMajorIndex: data.furthestMajorIndex ?? 0,
+            state: data.state || {},
+            propertyStatus: prop.status,
+            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+        };
+    },
+
+    saveListingProcess: async (userId, listingId, { furthestMajorIndex, state }) => {
+        const propRef = db.collection('properties').doc(listingId);
+        const propSnap = await propRef.get();
+        if (!propSnap.exists) throw new AppError('Property not found', 404);
+        const prop = propSnap.data();
+        if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
+        if (prop.status === 'submitted') {
+            throw new AppError('Cannot edit a listing that has already been submitted', 409);
+        }
+
+        const procRef = db.collection('listingProcesses').doc(listingId);
+        const procSnap = await procRef.get();
+        const prev = procSnap.exists ? procSnap.data() : {
+            ownerId: userId,
+            listingId,
+            furthestMajorIndex: 0,
+            state: {},
+        };
+
+        const nextState =
+            state != null
+                ? { ...(prev.state || {}), ...state }
+                : prev.state || {};
+        const nextIndex =
+            typeof furthestMajorIndex === 'number'
+                ? Math.max(prev.furthestMajorIndex ?? 0, furthestMajorIndex)
+                : prev.furthestMajorIndex ?? 0;
+
+        await procRef.set(
+            {
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: nextIndex,
+                state: nextState,
+                updatedAt: FieldValue.serverTimestamp(),
+                ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+            },
+            { merge: true }
+        );
+
+        const propertyPatch = projectStateToProperty(nextState);
+        const hasPatch = Object.keys(propertyPatch).length > 0;
+        if (hasPatch || Object.keys(nextState).length > 0) {
+            await propRef.update({
+                ...propertyPatch,
+                status: prop.status === 'initiated' ? 'draft' : prop.status,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        }
+
+        return {
+            listingId,
+            furthestMajorIndex: nextIndex,
+            state: nextState,
+            propertyStatus: hasPatch && prop.status === 'initiated' ? 'draft' : prop.status,
+        };
+    },
+
+    getOwnerMostRecentProcess: async (userId) => {
+        try {
+            // Avoid composite index: filter by owner, sort in memory
+            const snapshot = await db
+                .collection('listingProcesses')
+                .where('ownerId', '==', userId)
+                .get();
+
+            if (snapshot.empty) {
+                return { process: null };
+            }
+
+            const docs = snapshot.docs
+                .map((doc) => {
+                    const data = doc.data();
+                    const updatedAt = data.updatedAt?.toDate?.() || data.updatedAt || new Date(0);
+                    return { id: doc.id, data, updatedAt: new Date(updatedAt).getTime() };
+                })
+                .sort((a, b) => b.updatedAt - a.updatedAt);
+
+            for (const { id, data } of docs) {
+                const propSnap = await db.collection('properties').doc(id).get();
+                if (!propSnap.exists) continue;
+                const status = propSnap.data().status;
+                if (status === 'submitted' || status === 'active' || status === 'closed') continue;
+                return {
+                    process: {
+                        listingId: id,
+                        furthestMajorIndex: data.furthestMajorIndex ?? 0,
+                        state: data.state || {},
+                        propertyStatus: status,
+                        updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+                    },
+                };
+            }
+
+            return { process: null };
+        } catch (e) {
+            console.error('Error in getOwnerMostRecentProcess:', e);
+            throw new AppError(`Failed to fetch most recent listing process: ${e.message}`, 500);
+        }
+    },
+
     /**
-     * STAGE 2 — Draft auto-save, one field at a time.
+     * STAGE 2 — Draft auto-save, one field at a time (legacy / compat).
      * `field` is the object attached by middlewares/validateDraftField.js:
      *   { propertyType, fieldName, fieldValue, path, dbKey }
      */

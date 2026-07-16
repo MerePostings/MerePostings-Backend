@@ -4,19 +4,14 @@ const { ADDONS_BY_ID } = require('../../data/addons')
 
 /**
  * Stage 1 — initiation.
- * ⚠️ Placeholder enum — swap in your real occupancy types.
+ * occupancyType optional so the funnel can start before Basic detail.
  */
 const initiatePropertySchema = Joi.object({
-    occupancyType: Joi.string().valid('owner_occupied', 'tenant_occupied', 'vacant').required(),
+    occupancyType: Joi.string().valid('owner_occupied', 'tenant_occupied', 'vacant').optional(),
 });
 
 /**
- * Stage 2 — draft auto-save envelope.
- *
- * `fieldValue` is deliberately Joi.any() here — its real shape depends on
- * BOTH propertyType and fieldName, so it can't be pinned down statically.
- * It gets validated dynamically against the field registry in
- * middlewares/validateDraftField.js, after this envelope passes.
+ * Stage 2 — draft auto-save envelope (legacy FE path; still used by admin/compat).
  */
 const draftFieldEnvelopeSchema = Joi.object({
     propertyType: Joi.string()
@@ -39,4 +34,14 @@ const selectedAddonsSchema = Joi.object({
         .default([]),
 });
 
-module.exports = { initiatePropertySchema, draftFieldEnvelopeSchema, selectedAddonsSchema };
+const listingProcessPatchSchema = Joi.object({
+    furthestMajorIndex: Joi.number().integer().min(0).max(8).optional(),
+    state: Joi.object().unknown(true).optional(),
+}).or('furthestMajorIndex', 'state');
+
+module.exports = {
+    initiatePropertySchema,
+    draftFieldEnvelopeSchema,
+    listingProcessPatchSchema,
+    selectedAddonsSchema
+};

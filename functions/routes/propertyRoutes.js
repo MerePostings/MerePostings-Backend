@@ -4,7 +4,10 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const validateDraftField = require("../middlewares/validateDraftField");
-const { initiatePropertySchema, selectedAddonsSchema } = require("../validators/property/schemas.js");
+const {
+    initiatePropertySchema, selectedAddonsSchema,
+    listingProcessPatchSchema,
+} = require("../validators/property/schemas.js");
 
 router.get(
     "/get-addon-registry",
@@ -25,6 +28,12 @@ router.get(
 );
 
 router.get(
+    "/get-owner-most-recent-process",
+    verifyFirebaseToken,
+    propertyController.getOwnerMostRecentProcess
+);
+
+router.get(
     "/listings/:id",
     verifyFirebaseToken,
     propertyController.getListing
@@ -35,6 +44,19 @@ router.post(
     verifyFirebaseToken,
     validate(initiatePropertySchema),
     propertyController.initiateProperty
+);
+
+router.get(
+    "/:listingId/listing-process",
+    verifyFirebaseToken,
+    propertyController.getListingProcess
+);
+
+router.patch(
+    "/:listingId/listing-process",
+    verifyFirebaseToken,
+    validate(listingProcessPatchSchema),
+    propertyController.saveListingProcess
 );
 
 router.patch(
