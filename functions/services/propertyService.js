@@ -1,10 +1,10 @@
+const path = require('path');
+const { getStepsForListing } = require("../data/progressTrackerSteps")
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
-const { Readable } = require('stream');
-const fs = require('fs');
-const Antropic = require('@anthropic-ai/sdk')
-const path = require('path');
+const { STATIC_STEPS } = require('../data/progressTrackerSteps')
+const { ADDONS_BY_ID } = require('../data/addons')
 
 const buildAddressName = (location) => {
     try {
@@ -454,5 +454,153 @@ const propertyService = {
         }
     },
 
-}
+    markStepCompleted: async (listingId, stepKey) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const snap = await docRef.get();
+
+            if (!snap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = snap.data();
+            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+
+            if (!validStepIds.includes(stepKey)) {
+                throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
+            }
+
+            await docRef.update({
+                [`progressTracker.completedSteps.${stepKey}`]: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error marking step completed:", e);
+            throw new AppError(`Failed to mark step as completed: ${e.message}`, 500);
+        }
+    },
+
+    markStepIncomplete: async (listingId, stepKey) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const snap = await docRef.get();
+
+            if (!snap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = snap.data();
+            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+
+            if (!validStepIds.includes(stepKey)) {
+                throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
+            }
+
+            await docRef.update({
+                [`progressTracker.completedSteps.${stepKey}`]: FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error marking step incomplete:", e);
+            throw new AppError(`Failed to mark step as incomplete: ${e.message}`, 500);
+        }
+    },
+
+    getProgressTracker: async (uid, listingId) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = docSnap.data();
+
+            if (data.ownerId !== uid) {
+                throw new AppError("Unauthorized access to this property", 403);
+            }
+
+            const completedSteps = data.progressTracker?.completedSteps ?? {};
+            const selectedAddons = data.selectedAddons ?? [];
+
+            const dynamicSteps = selectedAddons
+                .map((addonId) => ADDONS_BY_ID[addonId])
+                .filter(Boolean)
+                .map((addon) => ({ id: addon.id, label: addon.label }));
+
+            const steps = [...STATIC_STEPS, ...dynamicSteps].map((step) => {
+                const completedAt = completedSteps[step.id];
+                return {
+                    id: step.id,
+                    label: step.label,
+                    completed: Boolean(completedAt),
+                    completedAt: completedAt?.toDate?.() || completedAt || null,
+                };
+            });
+
+            const completedCount = steps.filter((s) => s.completed).length;
+
+            return {
+                totalSteps: steps.length,
+                completedCount,
+                percentage: Math.round((completedCount / steps.length) * 100),
+                steps,
+            };
+
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error in getProgressTracker:", e);
+            throw new AppError(`Failed to fetch progress tracker: ${e.message}`, 500);
+        }
+    },
+
+    /**
+     * Persists the caller's addon selection onto the listing. Called just
+     * before checkout so the price stripeService calculates always matches
+     * what's stored (and what getProgressTracker reads back for the
+     * dynamic addon steps).
+     */
+    saveSelectedAddons: async (userId, listingId, selectedAddons) => {
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            throw new AppError("Property not found", 404);
+        }
+
+        const existing = snap.data();
+
+        if (existing.ownerId !== userId) {
+            throw new AppError("Unauthorized access to this property", 403);
+        }
+
+        if (existing.status === 'submitted') {
+            throw new AppError("Cannot edit a listing that has already been submitted", 409);
+        }
+
+        // Belt-and-suspenders: Joi already checked these against ADDONS_BY_ID
+        // at the route level, but this is the layer that actually writes to
+        // Firestore and feeds Stripe pricing, so re-check here too.
+        const invalidIds = selectedAddons.filter((id) => !ADDONS_BY_ID[id]);
+        if (invalidIds.length > 0) {
+            throw new AppError(`Unknown addon id(s): ${invalidIds.join(', ')}`, 400);
+        }
+
+        try {
+            await docRef.update({
+                selectedAddons,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error saving selected addons:", e);
+            throw new AppError("Failed to save selected addons", 500);
+        }
+
+        return selectedAddons;
+    },
+};
+
 module.exports = propertyService

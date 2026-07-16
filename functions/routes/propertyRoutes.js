@@ -4,7 +4,13 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const validateDraftField = require("../middlewares/validateDraftField");
-const { initiatePropertySchema } = require("../validators/property/schemas.js");
+const { initiatePropertySchema, selectedAddonsSchema } = require("../validators/property/schemas.js");
+
+router.get(
+    "/get-addon-registry",
+    verifyFirebaseToken,
+    propertyController.getAddons
+);
 
 router.get(
     "/get-owner-properties",
@@ -39,8 +45,9 @@ router.patch(
 );
 
 router.post(
-    "/create-checkout-url/:listingId",
+    "/create-client-secret/:listingId",
     verifyFirebaseToken,
+    validate(selectedAddonsSchema),
     propertyController.stripeCheckoutSessionForCreateListing
 );
 

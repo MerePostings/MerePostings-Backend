@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { propertyTypeFields } = require('./fieldRegistry');
+const { ADDONS_BY_ID } = require('../../data/addons')
 
 /**
  * Stage 1 — initiation.
@@ -25,4 +26,17 @@ const draftFieldEnvelopeSchema = Joi.object({
     fieldValue: Joi.any().required(),
 });
 
-module.exports = { initiatePropertySchema, draftFieldEnvelopeSchema };
+/**
+ * Addon selection payload — sent right before checkout (and optionally
+ * autosaved earlier if the frontend has a dedicated addons step).
+ * Enum is built from ADDONS_BY_ID so it can't drift out of sync with
+ * the actual addon registry.
+ */
+const selectedAddonsSchema = Joi.object({
+    selectedAddons: Joi.array()
+        .items(Joi.string().valid(...Object.keys(ADDONS_BY_ID)))
+        .unique()
+        .default([]),
+});
+
+module.exports = { initiatePropertySchema, draftFieldEnvelopeSchema, selectedAddonsSchema };

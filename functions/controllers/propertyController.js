@@ -2,6 +2,7 @@ const propertyService = require('../services/propertyService')
 const asyncErrorHandler = require('../utils/asyncErrorHandler');
 const stripeService = require('../services/stripeService');
 const Busboy = require("busboy");
+const { ADDONS } = require('../data/addons');
 
 const propertyController = {
 
@@ -89,7 +90,9 @@ const propertyController = {
     }),
 
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
-        const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
+        const { listingId } = req.params;
+        const selectedAddons = await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
+        const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(listingId, req.user.uid, selectedAddons)
         res.status(200).json({clientSecret})
     }),
 
@@ -110,6 +113,10 @@ const propertyController = {
             stats: result.stats
         });
     }),
+
+    getAddons: asyncErrorHandler(async (req, res) => {
+        res.status(200).json(ADDONS)
+    })
 }
 
 module.exports = propertyController
