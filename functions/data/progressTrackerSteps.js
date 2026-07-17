@@ -1,12 +1,8 @@
 const { ADDONS_BY_ID } = require('../data/addons');
 
 const STATIC_STEPS = [
-  { id: 'ownership_verified',      label: 'Ownership Verified' },
-  { id: 'measurement_confirmed',   label: 'Measurement Confirmed' },
-  { id: 'property_verified',       label: 'Property Verified' },
-  { id: 'mls_entry_complete',      label: 'MLS Entry Complete' },
-  { id: 'listing_live',            label: 'Listing Live' },
-  { id: 'for_sale_sign_installed', label: 'For Sale Sign Installed' },
+  { id: 'verification',         label: 'Verification' },
+  { id: 'mls_entry_completion', label: 'MLS Entry Completion' },
 ];
 
 function getStepsForListing(selectedAddonIds = []) {

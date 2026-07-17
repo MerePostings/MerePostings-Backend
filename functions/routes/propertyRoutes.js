@@ -104,4 +104,10 @@ router.delete(
     propertyController.removeMedia
 );
 
+router.get(
+    "/listing-process/:listingId",
+    verifyFirebaseToken,
+    propertyController.getProgressTracker
+);
+
 module.exports = router;
