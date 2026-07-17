@@ -2,7 +2,7 @@ const { db } = require("../config/db");
 const AppError = require("../utils/AppError")
 const { FieldValue } = require('firebase-admin/firestore');
 const stripe = require('../config/stripe')
-const { calculateListingPrice } = require('../utils/listingPriceCalculator')
+const calculateListingPrice = require('../utils/listingPriceCalculator')
 const stripeService = {
 
     /**
