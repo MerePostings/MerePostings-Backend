@@ -48,7 +48,7 @@ const googleFunctionsService = {
 
         if (lastMeetingDate > oneDayAgo) {
           throw new AppError(
-            "You have already booked a meeting with us today. If you would like to book another meeting, please contact us at support@commercialxclusive.com",
+            "You have already booked a meeting with us today. If you would like to book another meeting, please contact us at support@merepostings.com",
             400
           );
         }
@@ -80,7 +80,7 @@ const googleFunctionsService = {
       }
 
       const event = {
-        summary: `Commercial Xclusive meeting with ${email}`,
+        summary: `Mere Postings meeting with ${email}`,
         start: {
           dateTime: startDate.toISO(),
           timeZone,

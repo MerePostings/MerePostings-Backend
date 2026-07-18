@@ -1,10 +1,11 @@
+const path = require('path');
+const { getStepsForListing } = require("../data/progressTrackerSteps")
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
-const { Readable } = require('stream');
-const fs = require('fs');
-const Antropic = require('@anthropic-ai/sdk')
-const path = require('path');
+const { STATIC_STEPS } = require('../data/progressTrackerSteps')
+const { ADDONS_BY_ID } = require('../data/addons')
+const { projectStateToProperty } = require('../utils/projectListingState');
 
 const buildAddressName = (location) => {
     try {
@@ -33,6 +34,10 @@ const propertyService = {
      * - Removes any key literally named "undefined"
      * - Removes any top-level keys that have undefined values
      * - Cleans inside sectionValues and all section objects
+     *
+     * NOTE: only used by the legacy addProperty/saveProperty flow below.
+     * The new draft-field flow validates+writes one field at a time, so
+     * there's no bulk payload left to sanitize.
      */
     cleanPayload: (payload) => {
         if (!payload || typeof payload !== 'object') return payload;
@@ -80,11 +85,9 @@ const propertyService = {
     },
 
     /**
-     * Creates a new property listing in Firestore
-     * - Cleans the payload before saving
-     * - Skips creation if a listingId already exists (idempotent)
-     * - Saves core property fields and all sectionValues to the document
-     * - Sets initial status as 'draft' and paid as false
+     * LEGACY — full-payload create/update, kept for backward compatibility
+     * while the frontend migrates to initiateProperty() + saveDraftField().
+     * Safe to delete once nothing calls POST /add-property anymore.
      */
     saveProperty: async (userId, payload) => {
         const cleanData = propertyService.cleanPayload(payload);
@@ -127,6 +130,252 @@ const propertyService = {
         } catch (e) {
             console.error("Error saving property:", e);
             throw new AppError("Failed to save Property", 500);
+        }
+    },
+
+    /**
+     * STAGE 1 — Initiation.
+     * Creates properties/{id} + listingProcesses/{id}. occupancyType optional.
+     */
+    initiateProperty: async (userId, body = {}) => {
+        const { occupancyType } = body || {};
+        try {
+            const propertyData = {
+                ownerId: userId,
+                status: 'initiated',
+                paid: false,
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            };
+            if (occupancyType) propertyData.occupancyType = occupancyType;
+
+            const listingRef = await db.collection('properties').add(propertyData);
+            const listingId = listingRef.id;
+
+            await db.collection('listingProcesses').doc(listingId).set({
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: 0,
+                state: occupancyType
+                    ? {
+                        occupancy:
+                            occupancyType === 'owner_occupied'
+                                ? 'owner'
+                                : occupancyType === 'tenant_occupied'
+                                    ? 'tenant'
+                                    : 'vacant',
+                    }
+                    : {},
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            return listingId;
+        } catch (e) {
+            console.error("Error initiating property:", e);
+            throw new AppError("Failed to initiate property", 500);
+        }
+    },
+
+    getListingProcess: async (userId, listingId) => {
+        const propSnap = await db.collection('properties').doc(listingId).get();
+        if (!propSnap.exists) throw new AppError('Property not found', 404);
+        const prop = propSnap.data();
+        if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
+
+        const procSnap = await db.collection('listingProcesses').doc(listingId).get();
+        if (!procSnap.exists) {
+            // Backfill empty process for older properties
+            const empty = {
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: 0,
+                state: {},
+                createdAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            };
+            await db.collection('listingProcesses').doc(listingId).set(empty);
+            return {
+                listingId,
+                furthestMajorIndex: 0,
+                state: {},
+                propertyStatus: prop.status,
+            };
+        }
+
+        const data = procSnap.data();
+        return {
+            listingId,
+            furthestMajorIndex: data.furthestMajorIndex ?? 0,
+            state: data.state || {},
+            propertyStatus: prop.status,
+            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+        };
+    },
+
+    saveListingProcess: async (userId, listingId, { furthestMajorIndex, state }) => {
+        const propRef = db.collection('properties').doc(listingId);
+        const propSnap = await propRef.get();
+        if (!propSnap.exists) throw new AppError('Property not found', 404);
+        const prop = propSnap.data();
+        if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
+        if (prop.status === 'submitted') {
+            throw new AppError('Cannot edit a listing that has already been submitted', 409);
+        }
+
+        const procRef = db.collection('listingProcesses').doc(listingId);
+        const procSnap = await procRef.get();
+        const prev = procSnap.exists ? procSnap.data() : {
+            ownerId: userId,
+            listingId,
+            furthestMajorIndex: 0,
+            state: {},
+        };
+
+        const nextState =
+            state != null
+                ? { ...(prev.state || {}), ...state }
+                : prev.state || {};
+        const nextIndex =
+            typeof furthestMajorIndex === 'number'
+                ? Math.max(prev.furthestMajorIndex ?? 0, furthestMajorIndex)
+                : prev.furthestMajorIndex ?? 0;
+
+        await procRef.set(
+            {
+                ownerId: userId,
+                listingId,
+                furthestMajorIndex: nextIndex,
+                state: nextState,
+                updatedAt: FieldValue.serverTimestamp(),
+                ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+            },
+            { merge: true }
+        );
+
+        const propertyPatch = projectStateToProperty(nextState);
+        const hasPatch = Object.keys(propertyPatch).length > 0;
+        if (hasPatch || Object.keys(nextState).length > 0) {
+            await propRef.update({
+                ...propertyPatch,
+                status: prop.status === 'initiated' ? 'draft' : prop.status,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        }
+
+        return {
+            listingId,
+            furthestMajorIndex: nextIndex,
+            state: nextState,
+            propertyStatus: hasPatch && prop.status === 'initiated' ? 'draft' : prop.status,
+        };
+    },
+
+    getOwnerMostRecentProcess: async (userId) => {
+        try {
+            // Avoid composite index: filter by owner, sort in memory
+            const snapshot = await db
+                .collection('listingProcesses')
+                .where('ownerId', '==', userId)
+                .get();
+
+            if (snapshot.empty) {
+                return { process: null };
+            }
+
+            const docs = snapshot.docs
+                .map((doc) => {
+                    const data = doc.data();
+                    const updatedAt = data.updatedAt?.toDate?.() || data.updatedAt || new Date(0);
+                    return { id: doc.id, data, updatedAt: new Date(updatedAt).getTime() };
+                })
+                .sort((a, b) => b.updatedAt - a.updatedAt);
+
+            for (const { id, data } of docs) {
+                const propSnap = await db.collection('properties').doc(id).get();
+                if (!propSnap.exists) continue;
+                const status = propSnap.data().status;
+                if (status === 'submitted' || status === 'active' || status === 'closed') continue;
+                return {
+                    process: {
+                        listingId: id,
+                        furthestMajorIndex: data.furthestMajorIndex ?? 0,
+                        state: data.state || {},
+                        propertyStatus: status,
+                        updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+                    },
+                };
+            }
+
+            return { process: null };
+        } catch (e) {
+            console.error('Error in getOwnerMostRecentProcess:', e);
+            throw new AppError(`Failed to fetch most recent listing process: ${e.message}`, 500);
+        }
+    },
+
+    /**
+     * STAGE 2 — Draft auto-save, one field at a time (legacy / compat).
+     * `field` is the object attached by middlewares/validateDraftField.js:
+     *   { propertyType, fieldName, fieldValue, path, dbKey }
+     */
+    saveDraftField: async (userId, listingId, field) => {
+        const { propertyType, fieldName, fieldValue, path: sectionPath, dbKey } = field;
+
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            throw new AppError("Property not found", 404);
+        }
+
+        const existing = snap.data();
+
+        if (existing.ownerId !== userId) {
+            throw new AppError("Unauthorized access to this property", 403);
+        }
+
+        if (existing.status === 'submitted') {
+            throw new AppError("Cannot edit a listing that has already been submitted", 409);
+        }
+
+        if (existing.propertyType && existing.propertyType !== propertyType) {
+            throw new AppError(
+                `Property type mismatch: listing is "${existing.propertyType}" but request sent "${propertyType}"`,
+                409
+            );
+        }
+
+        const firestoreKey = sectionPath === 'top' ? dbKey : `${sectionPath}.${dbKey}`;
+
+        try {
+            await docRef.update({
+                [firestoreKey]: fieldValue,
+                status: 'draft',
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error saving draft field:", e);
+            throw new AppError("Failed to save field", 500);
+        }
+
+        return { [fieldName]: fieldValue };
+    },
+
+    /**
+     * STAGE 3 — Submission.
+     * Call this from wherever payment success is confirmed 
+     */
+    markSubmitted: async (listingId) => {
+        try {
+            await db.collection('properties').doc(listingId).update({
+                status: 'submitted',
+                paid: true,
+                submittedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error marking property submitted:", e);
         }
     },
 
@@ -280,103 +529,6 @@ const propertyService = {
         }
     },
 
-    generateAutoFill: async (fieldName, fieldTitle, maxLength, propertyData) => {
-        const { selectedType, subType, saleType, rooms, sectionValues } = propertyData;
-
-        const formatSectionValues = (sections) => {
-            if (!sections || typeof sections !== 'object') return 'No details provided.';
-
-            return Object.entries(sections)
-                .map(([sectionName, fields]) => {
-                    if (!fields || typeof fields !== 'object') return null;
-
-                    const filledFields = Object.entries(fields)
-                        .filter(([, val]) => {
-                            if (val === null || val === undefined || val === '') return false;
-                            if (Array.isArray(val)) return val.length > 0;
-                            return true;
-                        })
-                        .map(([key, val]) => {
-                            const label = key
-                                .replace(/([A-Z])/g, ' $1')
-                                .replace(/^./, s => s.toUpperCase())
-                                .trim();
-
-                            const display = Array.isArray(val)
-                                ? val.join(', ')
-                                : typeof val === 'boolean'
-                                ? val ? 'Yes' : 'No'
-                                : String(val);
-
-                            return `  • ${label}: ${display}`;
-                        });
-
-                    if (filledFields.length === 0) return null;
-                    return `[${sectionName}]\n${filledFields.join('\n')}`;
-                })
-                .filter(Boolean)
-                .join('\n\n');
-        };
-
-        const formatRooms = (rooms) => {
-            if (!rooms || rooms.length === 0) return null;
-            return rooms
-                .map((r, i) => {
-                    const parts = [
-                        r.roomType && `Type: ${r.roomType}`,
-                        r.roomLevel && `Level: ${r.roomLevel}`,
-                        (r.length && r.width) && `Size: ${r.length} x ${r.width}${r.height ? ` x ${r.height}` : ''}`,
-                        r.descriptionOne,
-                        r.descriptionTwo,
-                        r.descriptionThree,
-                    ].filter(Boolean);
-                    return `  Room ${i + 1}: ${parts.join(' | ')}`;
-                })
-                .join('\n');
-        };
-
-        const formattedSections = formatSectionValues(sectionValues);
-        const formattedRooms = formatRooms(rooms);
-
-        const saleTypeLabel = {
-            sell: 'For Sale',
-            lease: 'For Lease / Rent',
-            assign: 'Assignment Sale',
-        }[saleType] ?? saleType ?? 'Unknown';
-
-        const prompt = `You are an expert Canadian real estate copywriter helping sellers list their properties on MLS.
-
-            Generate compelling "${fieldTitle}" copy for a real estate listing with the following details:
-
-            LISTING TYPE: ${saleTypeLabel}
-            PROPERTY TYPE: ${selectedType ?? 'Unknown'}${subType ? ` — ${subType}` : ''}
-
-            PROPERTY DETAILS:
-            ${formattedSections || 'No additional details provided yet.'}
-            ${formattedRooms ? `\nROOMS:\n${formattedRooms}` : ''}
-
-            RULES:
-            - Maximum ${maxLength} characters (strictly enforced — count carefully)
-            - Write in third person, present tense
-            - Highlight the strongest selling points based on the data above
-            - Use natural, engaging real estate language — not bullet points
-            - Do NOT mention price or address
-            - Do NOT add any preamble, heading, or explanation — return ONLY the description text itself
-        `;
-
-        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-        const message = await client.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: prompt }],
-        });
-
-        const text = message.content?.find(b => b.type === 'text')?.text ?? '';
-
-        return text.trim().slice(0, maxLength);
-    },
-
     reorderMedia: async (listingId, mediaType, urls) => {
         try{
             if (!['photos', 'attachments'].includes(mediaType)) {
@@ -460,5 +612,153 @@ const propertyService = {
         }
     },
 
-}
+    markStepCompleted: async (listingId, stepKey) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const snap = await docRef.get();
+
+            if (!snap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = snap.data();
+            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+
+            if (!validStepIds.includes(stepKey)) {
+                throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
+            }
+
+            await docRef.update({
+                [`progressTracker.completedSteps.${stepKey}`]: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error marking step completed:", e);
+            throw new AppError(`Failed to mark step as completed: ${e.message}`, 500);
+        }
+    },
+
+    markStepIncomplete: async (listingId, stepKey) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const snap = await docRef.get();
+
+            if (!snap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = snap.data();
+            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+
+            if (!validStepIds.includes(stepKey)) {
+                throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
+            }
+
+            await docRef.update({
+                [`progressTracker.completedSteps.${stepKey}`]: FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error marking step incomplete:", e);
+            throw new AppError(`Failed to mark step as incomplete: ${e.message}`, 500);
+        }
+    },
+
+    getProgressTracker: async (uid, listingId) => {
+        try {
+            const docRef = db.collection('properties').doc(listingId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new AppError("Property not found", 404);
+            }
+
+            const data = docSnap.data();
+
+            if (data.ownerId !== uid) {
+                throw new AppError("Unauthorized access to this property", 403);
+            }
+
+            const completedSteps = data.progressTracker?.completedSteps ?? {};
+            const selectedAddons = data.selectedAddons ?? [];
+
+            const dynamicSteps = selectedAddons
+                .map((addonId) => ADDONS_BY_ID[addonId])
+                .filter(Boolean)
+                .map((addon) => ({ id: addon.id, label: addon.label }));
+
+            const steps = [...STATIC_STEPS, ...dynamicSteps].map((step) => {
+                const completedAt = completedSteps[step.id];
+                return {
+                    id: step.id,
+                    label: step.label,
+                    completed: Boolean(completedAt),
+                    completedAt: completedAt?.toDate?.() || completedAt || null,
+                };
+            });
+
+            const completedCount = steps.filter((s) => s.completed).length;
+
+            return {
+                totalSteps: steps.length,
+                completedCount,
+                percentage: Math.round((completedCount / steps.length) * 100),
+                steps,
+            };
+
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            console.error("Error in getProgressTracker:", e);
+            throw new AppError(`Failed to fetch progress tracker: ${e.message}`, 500);
+        }
+    },
+
+    /**
+     * Persists the caller's addon selection onto the listing. Called just
+     * before checkout so the price stripeService calculates always matches
+     * what's stored (and what getProgressTracker reads back for the
+     * dynamic addon steps).
+     */
+    saveSelectedAddons: async (userId, listingId, selectedAddons) => {
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+
+        if (!snap.exists) {
+            throw new AppError("Property not found", 404);
+        }
+
+        const existing = snap.data();
+
+        if (existing.ownerId !== userId) {
+            throw new AppError("Unauthorized access to this property", 403);
+        }
+
+        if (existing.status === 'submitted') {
+            throw new AppError("Cannot edit a listing that has already been submitted", 409);
+        }
+
+        // Belt-and-suspenders: Joi already checked these against ADDONS_BY_ID
+        // at the route level, but this is the layer that actually writes to
+        // Firestore and feeds Stripe pricing, so re-check here too.
+        const invalidIds = selectedAddons.filter((id) => !ADDONS_BY_ID[id]);
+        if (invalidIds.length > 0) {
+            throw new AppError(`Unknown addon id(s): ${invalidIds.join(', ')}`, 400);
+        }
+
+        try {
+            await docRef.update({
+                selectedAddons,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            console.error("Error saving selected addons:", e);
+            throw new AppError("Failed to save selected addons", 500);
+        }
+
+        return selectedAddons;
+    },
+};
+
 module.exports = propertyService

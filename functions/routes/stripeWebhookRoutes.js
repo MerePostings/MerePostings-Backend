@@ -3,6 +3,7 @@ const router = express.Router();
 const stripe = require('../config/stripe')
 const { db } = require("../config/db");
 const { sendPaymentConfirmationEmail } = require('../services/mailService');
+const { markSubmitted } = require('../services/propertyService');
 const { FieldValue } = require('firebase-admin/firestore');
 const { addTransaction } = require('../services/stripeService');
 
@@ -31,13 +32,7 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
                         return res.json({ received: true });
                     }
     
-                    const propertyRef = db.collection("properties").doc(listingId);
-                    
-                    await propertyRef.update({
-                        paid: true,
-                        status: 'pending',
-                        updatedAt: FieldValue.serverTimestamp(),
-                    });
+                    await markSubmitted(listingId);
 
                     const listingLink = `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`
     

@@ -2,7 +2,7 @@ const { db } = require("../config/db");
 const AppError = require("../utils/AppError")
 const { FieldValue } = require('firebase-admin/firestore');
 const stripe = require('../config/stripe')
-const { calculateListingPrice } = require('../utils/listingPriceCalculator')
+const calculateListingPrice = require('../utils/listingPriceCalculator')
 const stripeService = {
 
     /**
@@ -23,14 +23,15 @@ const stripeService = {
 
     /**
      * Creates a Stripe Checkout Session for a new listing payment
-     * - Calculates total price based on saleType and selected addons
+     * - Calculates total price based on selected addons
      * - Fetches user data and creates a Stripe customer if one doesn't exist
      * - Builds a one-time payment session with the calculated amount
      * - Attaches listingId, userEmail, and firstName to the PaymentIntent metadata for webhook processing
      * - Returns the Stripe Checkout URL to redirect the user to
      */
-    stripeCheckoutSessionForCreateListing: async (listingId, uid, { saleType, selectedAddons}) => {
-        const { totalCents } = calculateListingPrice(saleType, selectedAddons)
+    stripeCheckoutSessionForCreateListing: async (listingId, uid, selectedAddons) => {
+        const { totalCents } = calculateListingPrice(selectedAddons)
+        
         try{
             const userRef = db.collection("users").doc(uid);
             const userSnap = await userRef.get();

@@ -2,8 +2,22 @@ const propertyService = require('../services/propertyService')
 const asyncErrorHandler = require('../utils/asyncErrorHandler');
 const stripeService = require('../services/stripeService');
 const Busboy = require("busboy");
+const { ADDONS } = require('../data/addons');
 
 const propertyController = {
+
+    initiateProperty: asyncErrorHandler(async (req, res) => {
+        const listingId = await propertyService.initiateProperty(req.user.uid, req.body);
+        res.status(201).json({ listingId });
+    }),
+
+    saveDraftField: asyncErrorHandler(async (req, res) => {
+        const { listingId } = req.params;
+        const field = await propertyService.saveDraftField(req.user.uid, listingId, req.validatedField);
+        res.status(200).json({ success: true, field });
+    }),
+
+    // LEGACY — kept for backward compatibility, see propertyService.saveProperty
     addProperty: asyncErrorHandler(async(req, res)=>{
         const listingId = await propertyService.saveProperty(req.user.uid, req.body);
         res.status(200).json({listingId});
@@ -66,17 +80,19 @@ const propertyController = {
     reorderMedia: asyncErrorHandler(async (req, res) => {
         const { listingId, mediaType } = req.params;
         const { urls } = req.body;
- 
+
         if (!Array.isArray(urls) || urls.length === 0) {
             return res.status(400).json({ error: "urls must be a non-empty array" });
         }
- 
+
         const media = await propertyService.reorderMedia(listingId, mediaType, urls);
         res.status(200).json({ success: true, media });
     }),
 
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
-        const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(req.params.listingId, req.user.uid, req.body)
+        const { listingId } = req.params;
+        const selectedAddons = await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
+        const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(listingId, req.user.uid, selectedAddons)
         res.status(200).json({clientSecret})
     }),
 
@@ -90,23 +106,6 @@ const propertyController = {
         res.status(200).json({properties})
     }),
 
-    autoFillField: asyncErrorHandler(async (req, res) => {
-        const { fieldName, fieldTitle, maxLength, propertyData } = req.body;
-
-        if (!fieldName || !fieldTitle || !propertyData) {
-            return res.status(400).json({ error: 'Missing required fields: fieldName, fieldTitle, propertyData' });
-        }
-
-        const generatedText = await propertyService.generateAutoFill(
-            fieldName,
-            fieldTitle,
-            maxLength ?? 2000,
-            propertyData
-        );
-
-        res.status(200).json({ text: generatedText });
-    }),
-
     getOwnerMostRecentProperty: asyncErrorHandler(async (req, res) => {
         const result = await propertyService.getOwnerMostRecentProperty(req.user.uid);
         res.status(200).json({
@@ -114,6 +113,33 @@ const propertyController = {
             stats: result.stats
         });
     }),
+
+    getAddons: asyncErrorHandler(async (req, res) => {
+        res.status(200).json(ADDONS)
+    }),
+
+    getListingProcess: asyncErrorHandler(async (req, res) => {
+        const process = await propertyService.getListingProcess(req.user.uid, req.params.listingId);
+        res.status(200).json({ process });
+    }),
+
+    saveListingProcess: asyncErrorHandler(async (req, res) => {
+        const process = await propertyService.saveListingProcess(
+            req.user.uid,
+            req.params.listingId,
+            req.body
+        );
+        res.status(200).json({ process });
+    }),
+
+    getOwnerMostRecentProcess: asyncErrorHandler(async (req, res) => {
+        const result = await propertyService.getOwnerMostRecentProcess(req.user.uid);
+        res.status(200).json(result);
+    }),
+
+    getProgressTracker: asyncErrorHandler(async (req, res) => {
+        const result = await propertyService.getProgressTracker(req.user.uid, req.params.listingId)
+    })
 }
 
 module.exports = propertyController
