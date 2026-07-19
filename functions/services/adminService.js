@@ -4,6 +4,10 @@ const AppError = require("../utils/AppError");
 const archiver = require('archiver');
 const axios = require('axios');
 const { PassThrough } = require('stream');
+const notificationService = require('./notificationService');
+
+const STATUS_SEVERITY = { draft: 'info', pending: 'info', active: 'success', closed: 'info' };
+const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
 
 const adminService = {
   handleAdminLogin: async (email) => {
@@ -327,13 +331,52 @@ const adminService = {
       const validStatuses = ['draft', 'pending', 'active', 'closed'];
       if (!validStatuses.includes(status)) throw new AppError('Invalid status', 400);
 
-      await db.collection('properties').doc(listingId).update({
+      const docRef = db.collection('properties').doc(listingId);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) throw new AppError('Listing not found', 404);
+
+      const existing = docSnap.data();
+      const previousStatus = existing.status;
+
+      await docRef.update({
         status,
         updatedAt: FieldValue.serverTimestamp(),
       });
 
+      // Notify the owner, best-effort — a failed notification/email
+      // shouldn't fail the status update itself, and there's nothing to
+      // notify about if the status didn't actually change.
+      if (existing.ownerId && previousStatus !== status) {
+        try {
+          const loc = existing.Location || {};
+          const addressParts = [
+            loc.streetNumber,
+            loc.streetName,
+            loc.streetDirection,
+            loc.apartmentUnitNumber ? `Unit ${loc.apartmentUnitNumber}` : null,
+            loc.municipality,
+            loc.area,
+          ].filter(Boolean);
+
+          await notificationService.createNotification({
+            userId: existing.ownerId,
+            type: 'status_change',
+            severity: STATUS_SEVERITY[status] || 'info',
+            title: 'Listing status updated',
+            message: `Your listing status has been updated to "${humanizeStatus(status)}".`,
+            listingId,
+            listingAddress: addressParts.join(' ') || null,
+            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionLabel: 'View Listing',
+          });
+        } catch (notifyErr) {
+          console.error('[notif] Failed to notify owner of status change:', notifyErr);
+        }
+      }
+
       return { success: true };
     } catch (e) {
+      if (e instanceof AppError) throw e;
       throw new AppError(e.message || 'Failed to update status', 500);
     }
   },

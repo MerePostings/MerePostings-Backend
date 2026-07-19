@@ -6,6 +6,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
 const { projectStateToProperty } = require('../utils/projectListingState');
+const notificationService = require('./notificationService');
 
 const buildAddressName = (location) => {
     try {
@@ -368,12 +369,34 @@ const propertyService = {
      */
     markSubmitted: async (listingId) => {
         try {
-            await db.collection('properties').doc(listingId).update({
+            const docRef = db.collection('properties').doc(listingId);
+            await docRef.update({
                 status: 'submitted',
                 paid: true,
                 submittedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
+
+            try {
+                const snap = await docRef.get();
+                const data = snap.data();
+                if (data?.ownerId) {
+                    await notificationService.createNotification({
+                        userId: data.ownerId,
+                        type: 'status_change',
+                        severity: 'success',
+                        title: 'Listing submitted',
+                        message: 'Your listing has been submitted and is now being reviewed.',
+                        listingId,
+                        listingAddress: buildAddressName(data.location || {}),
+                        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+                        actionLabel: 'View Listing',
+                        sendEmail: false,
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
+            }
         } catch (e) {
             console.error("Error marking property submitted:", e);
         }

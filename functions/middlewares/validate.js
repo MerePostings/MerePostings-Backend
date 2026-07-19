@@ -20,7 +20,17 @@ const validate = (schema, property = 'body') => (req, res, next) => {
         });
     }
 
-    req[property] = value;
+    if (property === 'query') {
+        Object.defineProperty(req, 'query', {
+            value,
+            configurable: true,
+            enumerable: true,
+            writable: true,
+        });
+    } else {
+        req[property] = value;
+    }
+
     next();
 };
 
