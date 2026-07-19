@@ -7,6 +7,7 @@ const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
 const { projectStateToProperty } = require('../utils/projectListingState');
 const notificationService = require('./notificationService');
+const actionService = require('./actionService');
 
 const buildAddressName = (location) => {
     try {
@@ -377,9 +378,10 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
+            let data;
             try {
                 const snap = await docRef.get();
-                const data = snap.data();
+                data = snap.data();
                 if (data?.ownerId) {
                     await notificationService.createNotification({
                         userId: data.ownerId,
@@ -396,6 +398,12 @@ const propertyService = {
                 }
             } catch (notifyErr) {
                 console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
+            }
+
+            try {
+                await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
+            } catch (actionErr) {
+                console.error('[actions] Failed to generate actions for listing:', actionErr);
             }
         } catch (e) {
             console.error("Error marking property submitted:", e);
@@ -448,6 +456,11 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
+            try {
+                await actionService.completeUploadAction(listingId, mediaType);
+            } catch (actionErr) {
+                console.error('[actions] Failed to auto-complete upload action:', actionErr);
+            }
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);

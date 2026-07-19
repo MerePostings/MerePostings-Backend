@@ -1,6 +1,7 @@
 const { ADDONS_BY_ID } = require('../data/addons');
 
 const STATIC_STEPS = [
+  { id: 'payment',              label: 'Payment' },
   { id: 'verification',         label: 'Verification' },
   { id: 'mls_entry_completion', label: 'MLS Entry Completion' },
 ];

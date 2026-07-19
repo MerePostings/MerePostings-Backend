@@ -2,6 +2,7 @@ const NOTIFICATION_TYPES = [
   'status_change',
   'message',
   'system',
+  'action_update',
 ];
 
 const SEVERITIES = ['info', 'success', 'warning', 'urgent'];
