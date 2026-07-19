@@ -605,43 +605,41 @@ const propertyService = {
 
     getOwnerMostRecentProperty: async (uid) => {
         try {
-            const snapshot = await db
-                .collection("properties")
-                .where("ownerId", "==", uid)
-                .orderBy("updatedAt", "desc")
-                .get();
+            const STATUSES = ["active", "draft", "closed", "pending"];
 
-            if (snapshot.empty) {
-                return {
-                    property: null,
-                    stats: { active: 0, draft: 0, closed: 0, pending: 0 },
-                };
+            const [topSnapshot, ...countSnapshots] = await Promise.all([
+                db.collection("properties")
+                    .where("ownerId", "==", uid)
+                    .orderBy("updatedAt", "desc")
+                    .limit(1)
+                    .get(),
+                ...STATUSES.map((status) =>
+                    db.collection("properties")
+                        .where("ownerId", "==", uid)
+                        .where("status", "==", status)
+                        .count()
+                        .get()
+                ),
+            ]);
+
+            const stats = STATUSES.reduce((acc, status, i) => {
+                acc[status] = countSnapshots[i].data().count;
+                return acc;
+            }, { active: 0, draft: 0, closed: 0, pending: 0 });
+
+            if (topSnapshot.empty) {
+                return { property: null, stats };
             }
 
-            const properties = snapshot.docs.map((doc) => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    ...data,
-                    updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-                };
-            });
-
-            const stats = properties.reduce(
-                (acc, property) => {
-                    const status = property.status;
-                    if (acc[status] !== undefined) {
-                        acc[status] += 1;
-                    }
-                    return acc;
-                },
-                { active: 0, draft: 0, closed: 0, pending: 0 }
-            );
-
-            return {
-                property: properties[0], // most recent, since ordered by updatedAt desc
-                stats,
+            const doc = topSnapshot.docs[0];
+            const data = doc.data();
+            const property = {
+                id: doc.id,
+                ...data,
+                updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
             };
+
+            return { property, stats };
         } catch (e) {
             console.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);

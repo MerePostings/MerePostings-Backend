@@ -53,6 +53,10 @@ const cascadeCompleteStep = async (listingId, progressStepId) => {
 
 const actionService = {
 
+    // exposed so dashboardService can shape actions fetched by id (via db.getAll)
+    // the same way listActions/getAction already do, without duplicating the mapping
+    formatAction: toResponse,
+
     /**
      * Called (best-effort) from propertyService.markSubmitted once a listing
      * is paid for. Idempotent via deterministic doc ids, so Stripe webhook
@@ -65,34 +69,58 @@ const actionService = {
         const listingAddress = buildAddressName(location || {});
         const blueprints = getRequiredActionsForListing(selectedAddons);
 
-        const createdTitles = [];
+        let createdTitles = [];
 
-        for (const blueprint of blueprints) {
-            const docRef = db.collection('actions').doc(actionDocId(listingId, blueprint.key));
-            const snap = await docRef.get();
-            if (snap.exists) continue;
+        if (blueprints.length > 0) {
+            const pointerRef = db.collection('dashboardPointers').doc(ownerId);
+            const docRefs = blueprints.map((blueprint) =>
+                db.collection('actions').doc(actionDocId(listingId, blueprint.key))
+            );
 
-            await docRef.set({
-                userId: ownerId,
-                listingId,
-                listingAddress,
-                type: blueprint.type,
-                status: 'pending',
-                title: blueprint.title,
-                description: blueprint.description,
-                ctaLabel: blueprint.ctaLabel,
-                ctaUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
-                progressStepId: blueprint.progressStepId,
-                requiresScheduling: blueprint.requiresScheduling,
-                schedulingRequest: null,
-                scheduledEvent: null,
-                dueDate: null,
-                completedAt: null,
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
+            await db.runTransaction(async (tx) => {
+                const snaps = await tx.getAll(...docRefs, pointerRef);
+                const pointerSnap = snaps[snaps.length - 1];
+                const titles = [];
+                const createdIds = [];
+
+                blueprints.forEach((blueprint, i) => {
+                    if (snaps[i].exists) return;
+
+                    tx.set(docRefs[i], {
+                        userId: ownerId,
+                        listingId,
+                        listingAddress,
+                        type: blueprint.type,
+                        status: 'pending',
+                        title: blueprint.title,
+                        description: blueprint.description,
+                        ctaLabel: blueprint.ctaLabel,
+                        ctaUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+                        progressStepId: blueprint.progressStepId,
+                        requiresScheduling: blueprint.requiresScheduling,
+                        schedulingRequest: null,
+                        scheduledEvent: null,
+                        dueDate: null,
+                        completedAt: null,
+                        createdAt: FieldValue.serverTimestamp(),
+                        updatedAt: FieldValue.serverTimestamp(),
+                    });
+
+                    titles.push(blueprint.title);
+                    createdIds.push(docRefs[i].id);
+                });
+
+                if (createdIds.length > 0) {
+                    const currentIds = pointerSnap.exists ? (pointerSnap.data().recentActionIds || []) : [];
+                    tx.set(pointerRef, {
+                        ownerId,
+                        recentActionIds: [...createdIds, ...currentIds].slice(0, 3),
+                        updatedAt: FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+
+                createdTitles = titles;
             });
-
-            createdTitles.push(blueprint.title);
         }
 
         if (createdTitles.length > 0) {

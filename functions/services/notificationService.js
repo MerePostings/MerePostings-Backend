@@ -61,7 +61,16 @@ const renderNotificationEmail = (notification) => {
     };
 };
 
+const formatNotification = (id, data) => ({
+    id,
+    ...data,
+    createdAt: data.createdAt?.toDate?.() || data.createdAt,
+    readAt: data.readAt?.toDate?.() || data.readAt,
+});
+
 const notificationService = {
+
+    formatNotification,
 
     createNotification: async ({
         userId,
@@ -99,12 +108,30 @@ const notificationService = {
         };
 
         const notifRef = db.collection('notifications').doc();
+        const pointerRef = db.collection('dashboardPointers').doc(userId);
 
         try {
-            await notifRef.set({
-                ...notification,
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
+            // Reads must precede writes in a Firestore transaction — read the
+            // pointer's current recentNotificationIds first, then write the new
+            // notification and the updated pointer together atomically. This
+            // keeps "which notifications are recent" in sync at creation time
+            // without a separate Firestore trigger.
+            await db.runTransaction(async (tx) => {
+                const pointerSnap = await tx.get(pointerRef);
+                const currentIds = pointerSnap.exists ? (pointerSnap.data().recentNotificationIds || []) : [];
+
+                tx.set(notifRef, {
+                    ...notification,
+                    createdAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                });
+
+                tx.set(pointerRef, {
+                    ownerId: userId,
+                    recentNotificationIds: [notifRef.id, ...currentIds].slice(0, 3),
+                    unreadNotificationsCount: FieldValue.increment(1),
+                    updatedAt: FieldValue.serverTimestamp(),
+                }, { merge: true });
             });
         } catch (e) {
             console.error('[notif] Error creating notification:', e);
@@ -151,15 +178,7 @@ const notificationService = {
         const docs = snapshot.docs.slice(0, pageSize);
         const hasMore = snapshot.docs.length > pageSize;
 
-        const notifications = docs.map((doc) => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                ...data,
-                createdAt: data.createdAt?.toDate?.() || data.createdAt,
-                readAt: data.readAt?.toDate?.() || data.readAt,
-            };
-        });
+        const notifications = docs.map((doc) => formatNotification(doc.id, doc.data()));
 
         return {
             notifications,
@@ -185,11 +204,18 @@ const notificationService = {
         if (snap.data().userId !== userId) throw new AppError('Unauthorized access to this notification', 403);
 
         if (!snap.data().isRead) {
-            await docRef.update({
+            const batch = db.batch();
+            batch.update(docRef, {
                 isRead: true,
                 readAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
+            batch.set(db.collection('dashboardPointers').doc(userId), {
+                ownerId: userId,
+                unreadNotificationsCount: FieldValue.increment(-1),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            await batch.commit();
         }
 
         return { id: notificationId, isRead: true };
@@ -198,6 +224,7 @@ const notificationService = {
     markAllAsRead: async (userId) => {
         const batchSize = 400;
         let updatedCount = 0;
+        const pointerRef = db.collection('dashboardPointers').doc(userId);
 
         for (;;) {
             const snapshot = await db.collection('notifications')
@@ -216,6 +243,11 @@ const notificationService = {
                     updatedAt: FieldValue.serverTimestamp(),
                 });
             });
+            batch.set(pointerRef, {
+                ownerId: userId,
+                unreadNotificationsCount: FieldValue.increment(-snapshot.docs.length),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
             await batch.commit();
             updatedCount += snapshot.docs.length;
 
