@@ -139,6 +139,7 @@ const propertyController = {
 
     getProgressTracker: asyncErrorHandler(async (req, res) => {
         const result = await propertyService.getProgressTracker(req.user.uid, req.params.listingId)
+        res.status(200).json(result)
     })
 }
 
