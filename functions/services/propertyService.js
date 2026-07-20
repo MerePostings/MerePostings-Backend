@@ -5,7 +5,33 @@ const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
 const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
-const { projectStateToProperty } = require('../utils/projectListingState');
+const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
+
+function occupancyFromBe(occupancyType) {
+    if (occupancyType === 'owner_occupied') return 'owner';
+    if (occupancyType === 'tenant_occupied') return 'tenant';
+    if (occupancyType === 'vacant') return 'vacant';
+    return null;
+}
+
+/** Funnel-only fields lifted onto the property (alongside flowState). */
+function funnelFieldsFromState(state) {
+    if (!state || typeof state !== 'object') return {};
+    const patch = {};
+    if ('listedWithOtherBrokerage' in state) {
+        patch.listedWithOtherBrokerage = state.listedWithOtherBrokerage;
+    }
+    if ('supportTier' in state) {
+        patch.supportTier = state.supportTier;
+    }
+    if (state.walkthroughAnswers != null) {
+        patch.walkthroughAnswers = state.walkthroughAnswers;
+    }
+    if (state.sellerConfirmations != null) {
+        patch.sellerConfirmations = state.sellerConfirmations;
+    }
+    return patch;
+}
 
 const buildAddressName = (location) => {
     try {
@@ -135,42 +161,25 @@ const propertyService = {
 
     /**
      * STAGE 1 — Initiation.
-     * Creates properties/{id} + listingProcesses/{id}. occupancyType optional.
+     * Creates properties/{id} with empty flowState. occupancyType optional.
      */
     initiateProperty: async (userId, body = {}) => {
         const { occupancyType } = body || {};
         try {
+            const occupancy = occupancyFromBe(occupancyType);
+            const flowState = occupancy ? { occupancy } : {};
             const propertyData = {
                 ownerId: userId,
                 status: 'initiated',
                 paid: false,
+                flowState,
                 createdAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             };
             if (occupancyType) propertyData.occupancyType = occupancyType;
 
             const listingRef = await db.collection('properties').add(propertyData);
-            const listingId = listingRef.id;
-
-            await db.collection('listingProcesses').doc(listingId).set({
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: 0,
-                state: occupancyType
-                    ? {
-                        occupancy:
-                            occupancyType === 'owner_occupied'
-                                ? 'owner'
-                                : occupancyType === 'tenant_occupied'
-                                    ? 'tenant'
-                                    : 'vacant',
-                    }
-                    : {},
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-
-            return listingId;
+            return listingRef.id;
         } catch (e) {
             console.error("Error initiating property:", e);
             throw new AppError("Failed to initiate property", 500);
@@ -183,37 +192,15 @@ const propertyService = {
         const prop = propSnap.data();
         if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
 
-        const procSnap = await db.collection('listingProcesses').doc(listingId).get();
-        if (!procSnap.exists) {
-            // Backfill empty process for older properties
-            const empty = {
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: 0,
-                state: {},
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            };
-            await db.collection('listingProcesses').doc(listingId).set(empty);
-            return {
-                listingId,
-                furthestMajorIndex: 0,
-                state: {},
-                propertyStatus: prop.status,
-            };
-        }
-
-        const data = procSnap.data();
         return {
             listingId,
-            furthestMajorIndex: data.furthestMajorIndex ?? 0,
-            state: data.state || {},
+            state: prop.flowState || {},
             propertyStatus: prop.status,
-            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+            updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
         };
     },
 
-    saveListingProcess: async (userId, listingId, { furthestMajorIndex, state }) => {
+    saveListingProcess: async (userId, listingId, { state }) => {
         const propRef = db.collection('properties').doc(listingId);
         const propSnap = await propRef.get();
         if (!propSnap.exists) throw new AppError('Property not found', 404);
@@ -223,59 +210,37 @@ const propertyService = {
             throw new AppError('Cannot edit a listing that has already been submitted', 409);
         }
 
-        const procRef = db.collection('listingProcesses').doc(listingId);
-        const procSnap = await procRef.get();
-        const prev = procSnap.exists ? procSnap.data() : {
-            ownerId: userId,
-            listingId,
-            furthestMajorIndex: 0,
-            state: {},
-        };
-
+        const prevFlow = prop.flowState && typeof prop.flowState === 'object' ? prop.flowState : {};
         const nextState =
-            state != null
-                ? { ...(prev.state || {}), ...state }
-                : prev.state || {};
-        const nextIndex =
-            typeof furthestMajorIndex === 'number'
-                ? Math.max(prev.furthestMajorIndex ?? 0, furthestMajorIndex)
-                : prev.furthestMajorIndex ?? 0;
+            state != null ? { ...prevFlow, ...state } : prevFlow;
 
-        await procRef.set(
-            {
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: nextIndex,
-                state: nextState,
-                updatedAt: FieldValue.serverTimestamp(),
-                ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-            },
-            { merge: true }
-        );
-
-        const propertyPatch = projectStateToProperty(nextState);
-        const hasPatch = Object.keys(propertyPatch).length > 0;
-        if (hasPatch || Object.keys(nextState).length > 0) {
-            await propRef.update({
-                ...propertyPatch,
-                status: prop.status === 'initiated' ? 'draft' : prop.status,
-                updatedAt: FieldValue.serverTimestamp(),
-            });
+        const nextStatus = prop.status === 'initiated' ? 'draft' : prop.status;
+        const update = {
+            flowState: nextState,
+            ...funnelFieldsFromState(nextState),
+            status: nextStatus,
+            updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (Array.isArray(nextState.selectedAddons)) {
+            update.selectedAddons = nextState.selectedAddons;
         }
+        if (typeof nextState.furthestMajorIndex === 'number') {
+            update.furthestMajorIndex = Math.max(0, Math.min(8, nextState.furthestMajorIndex));
+        }
+
+        await propRef.update(update);
 
         return {
             listingId,
-            furthestMajorIndex: nextIndex,
             state: nextState,
-            propertyStatus: hasPatch && prop.status === 'initiated' ? 'draft' : prop.status,
+            propertyStatus: nextStatus,
         };
     },
 
     getOwnerMostRecentProcess: async (userId) => {
         try {
-            // Avoid composite index: filter by owner, sort in memory
             const snapshot = await db
-                .collection('listingProcesses')
+                .collection('properties')
                 .where('ownerId', '==', userId)
                 .get();
 
@@ -292,16 +257,12 @@ const propertyService = {
                 .sort((a, b) => b.updatedAt - a.updatedAt);
 
             for (const { id, data } of docs) {
-                const propSnap = await db.collection('properties').doc(id).get();
-                if (!propSnap.exists) continue;
-                const status = propSnap.data().status;
-                if (status === 'submitted' || status === 'active' || status === 'closed') continue;
+                if (!EDITABLE_STATUSES.has(data.status)) continue;
                 return {
                     process: {
                         listingId: id,
-                        furthestMajorIndex: data.furthestMajorIndex ?? 0,
-                        state: data.state || {},
-                        propertyStatus: status,
+                        state: data.flowState || {},
+                        propertyStatus: data.status,
                         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
                     },
                 };
