@@ -7,7 +7,7 @@ const { markSubmitted } = require('../services/propertyService');
 const { FieldValue } = require('firebase-admin/firestore');
 const { addTransaction } = require('../services/stripeService');
 
-router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req, res) =>{
+router.post('/stripe-webhook', async(req, res) =>{
     const sig = req.headers["stripe-signature"];
 
     try{
@@ -40,9 +40,9 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
                     await sendPaymentConfirmationEmail(userEmail, firstName, session.amount / 100, listingLink);
                     await addTransaction(customerId, session.amount / 100, session.id, "" ,"processed", "one-time", 1, listingId)
                 }catch(e){
-                 console.log(e)   
+                 console.log(e)
                 }
-
+                break;
             }
 
             default:
@@ -52,6 +52,7 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
         res.json({received:true});
     }catch(e){
         console.error(`Webhook error for event :`, e);
+        res.status(400).json({ error: e.message });
     }
 })
 

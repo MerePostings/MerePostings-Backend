@@ -1,4 +1,5 @@
 const adminService = require("../services/adminService");
+const actionService = require("../services/actionService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
 
 const adminController = {  
@@ -66,6 +67,21 @@ const adminController = {
         res.status(500).json({ error: 'Failed to download property zip' });
       }
     });
+  }),
+
+  listActionSchedulingQueue: asyncErrorHandler(async (req, res) => {
+    const actions = await actionService.adminListSchedulingQueue();
+    res.status(200).json({ actions });
+  }),
+
+  proposeActionTime: asyncErrorHandler(async (req, res) => {
+    const action = await actionService.adminProposeTime(req.params.actionId, req.body);
+    res.status(200).json({ action });
+  }),
+
+  completeAction: asyncErrorHandler(async (req, res) => {
+    const action = await actionService.adminCompleteAction(req.params.actionId);
+    res.status(200).json({ action });
   }),
 
 }

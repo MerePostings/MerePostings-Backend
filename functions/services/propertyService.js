@@ -32,6 +32,8 @@ function funnelFieldsFromState(state) {
     }
     return patch;
 }
+const notificationService = require('./notificationService');
+const actionService = require('./actionService');
 
 const buildAddressName = (location) => {
     try {
@@ -329,12 +331,41 @@ const propertyService = {
      */
     markSubmitted: async (listingId) => {
         try {
-            await db.collection('properties').doc(listingId).update({
+            const docRef = db.collection('properties').doc(listingId);
+            await docRef.update({
                 status: 'submitted',
                 paid: true,
                 submittedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
+
+            let data;
+            try {
+                const snap = await docRef.get();
+                data = snap.data();
+                if (data?.ownerId) {
+                    await notificationService.createNotification({
+                        userId: data.ownerId,
+                        type: 'status_change',
+                        severity: 'success',
+                        title: 'Listing submitted',
+                        message: 'Your listing has been submitted and is now being reviewed.',
+                        listingId,
+                        listingAddress: buildAddressName(data.location || {}),
+                        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+                        actionLabel: 'View Listing',
+                        sendEmail: false,
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
+            }
+
+            try {
+                await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
+            } catch (actionErr) {
+                console.error('[actions] Failed to generate actions for listing:', actionErr);
+            }
         } catch (e) {
             console.error("Error marking property submitted:", e);
         }
@@ -386,6 +417,11 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
+            try {
+                await actionService.completeUploadAction(listingId, mediaType);
+            } catch (actionErr) {
+                console.error('[actions] Failed to auto-complete upload action:', actionErr);
+            }
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
@@ -530,43 +566,41 @@ const propertyService = {
 
     getOwnerMostRecentProperty: async (uid) => {
         try {
-            const snapshot = await db
-                .collection("properties")
-                .where("ownerId", "==", uid)
-                .orderBy("updatedAt", "desc")
-                .get();
+            const STATUSES = ["active", "draft", "closed", "pending"];
 
-            if (snapshot.empty) {
-                return {
-                    property: null,
-                    stats: { active: 0, draft: 0, closed: 0, pending: 0 },
-                };
+            const [topSnapshot, ...countSnapshots] = await Promise.all([
+                db.collection("properties")
+                    .where("ownerId", "==", uid)
+                    .orderBy("updatedAt", "desc")
+                    .limit(1)
+                    .get(),
+                ...STATUSES.map((status) =>
+                    db.collection("properties")
+                        .where("ownerId", "==", uid)
+                        .where("status", "==", status)
+                        .count()
+                        .get()
+                ),
+            ]);
+
+            const stats = STATUSES.reduce((acc, status, i) => {
+                acc[status] = countSnapshots[i].data().count;
+                return acc;
+            }, { active: 0, draft: 0, closed: 0, pending: 0 });
+
+            if (topSnapshot.empty) {
+                return { property: null, stats };
             }
 
-            const properties = snapshot.docs.map((doc) => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    ...data,
-                    updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-                };
-            });
-
-            const stats = properties.reduce(
-                (acc, property) => {
-                    const status = property.status;
-                    if (acc[status] !== undefined) {
-                        acc[status] += 1;
-                    }
-                    return acc;
-                },
-                { active: 0, draft: 0, closed: 0, pending: 0 }
-            );
-
-            return {
-                property: properties[0], // most recent, since ordered by updatedAt desc
-                stats,
+            const doc = topSnapshot.docs[0];
+            const data = doc.data();
+            const property = {
+                id: doc.id,
+                ...data,
+                updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
             };
+
+            return { property, stats };
         } catch (e) {
             console.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);

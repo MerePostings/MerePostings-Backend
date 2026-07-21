@@ -9,6 +9,9 @@ const propertyRoutes = require('./routes/propertyRoutes')
 const scheduleRoutes = require('./routes/scheduleRoutes')
 const adminRoutes = require('./routes/adminRoutes')
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes')
+const notificationRoutes = require('./routes/notificationRoutes')
+const actionRoutes = require('./routes/actionRoutes')
+const dashboardRoutes = require('./routes/dashboardRoutes')
 
 const handleError = require('./middlewares/errorHandler')
 
@@ -35,6 +38,9 @@ app.use('/v1/user', userRoutes)
 app.use('/v1/property', propertyRoutes)
 app.use('/v1/schedule', scheduleRoutes)
 app.use('/v1/admin', adminRoutes)
+app.use('/v1/notification', notificationRoutes)
+app.use('/v1/action', actionRoutes)
+app.use('/v1/dashboard', dashboardRoutes)
 
 app.use(handleError);
 
