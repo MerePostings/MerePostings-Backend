@@ -14,23 +14,114 @@ function occupancyFromBe(occupancyType) {
     return null;
 }
 
-/** Funnel-only fields lifted onto the property (alongside flowState). */
-function funnelFieldsFromState(state) {
-    if (!state || typeof state !== 'object') return {};
-    const patch = {};
-    if ('listedWithOtherBrokerage' in state) {
-        patch.listedWithOtherBrokerage = state.listedWithOtherBrokerage;
+/** Step-group keys stored once on the property root (no flowState). */
+const STEP_GROUP_KEYS = [
+    'getStarted',
+    'sellingStyle',
+    'basicDetail',
+    'propertyDetails',
+    'featuresUpgrades',
+    'tellBuyers',
+    'beforeLive',
+    'reviewListing',
+];
+
+function isStepGroupedState(state) {
+    if (!state || typeof state !== 'object') return false;
+    return STEP_GROUP_KEYS.some((k) => state[k] != null && typeof state[k] === 'object');
+}
+
+/** Map legacy flat flowState blob → step-grouped wire shape. */
+function mapLegacyFlowStateToStepGroups(flow) {
+    if (!flow || typeof flow !== 'object') return {};
+    const {
+        furthestMajorIndex,
+        listedWithOtherBrokerage,
+        supportTier,
+        walkthroughAnswers,
+        occupancy,
+        sellerContact,
+        ownership,
+        mailingAddress,
+        propertyType,
+        askingPrice,
+        propertyDetails,
+        featuresUpgrades,
+        buyerCopy,
+        selectedAddons,
+        sellerConfirmations,
+        getStarted,
+        sellingStyle,
+        basicDetail,
+        tellBuyers,
+        beforeLive,
+        reviewListing,
+    } = flow;
+
+    // Already step-grouped (or partial) — pass through known keys.
+    if (isStepGroupedState(flow)) {
+        const out = {};
+        if (typeof furthestMajorIndex === 'number') out.furthestMajorIndex = furthestMajorIndex;
+        for (const k of STEP_GROUP_KEYS) {
+            if (flow[k] != null) out[k] = flow[k];
+        }
+        return out;
     }
-    if ('supportTier' in state) {
-        patch.supportTier = state.supportTier;
+
+    const out = {};
+    if (typeof furthestMajorIndex === 'number') out.furthestMajorIndex = furthestMajorIndex;
+
+    out.getStarted = getStarted ?? {
+        listedWithOtherBrokerage: listedWithOtherBrokerage ?? null,
+    };
+    out.sellingStyle = sellingStyle ?? {
+        supportTier: supportTier ?? null,
+        walkthroughAnswers: walkthroughAnswers ?? {},
+    };
+    out.basicDetail = basicDetail ?? {
+        occupancy: occupancy ?? null,
+        sellerContact: sellerContact ?? {},
+        ownership: ownership ?? {},
+        mailingAddress: mailingAddress ?? {},
+    };
+
+    const pd = propertyDetails && typeof propertyDetails === 'object' ? { ...propertyDetails } : {};
+    if (propertyType != null) pd.propertyType = propertyType;
+    if (askingPrice !== undefined) pd.askingPrice = askingPrice;
+    out.propertyDetails = pd;
+
+    if (featuresUpgrades != null) out.featuresUpgrades = featuresUpgrades;
+    out.tellBuyers = tellBuyers ?? buyerCopy ?? {};
+    out.beforeLive = beforeLive ?? { selectedAddons: Array.isArray(selectedAddons) ? selectedAddons : [] };
+    out.reviewListing = reviewListing ?? sellerConfirmations ?? {};
+
+    return out;
+}
+
+/** Assemble listing-process `state` from property root step groups (legacy flowState fallback). */
+function assembleProcessState(prop) {
+    if (isStepGroupedState(prop)) {
+        const state = {};
+        if (typeof prop.furthestMajorIndex === 'number') {
+            state.furthestMajorIndex = prop.furthestMajorIndex;
+        }
+        for (const k of STEP_GROUP_KEYS) {
+            if (prop[k] != null) state[k] = prop[k];
+        }
+        return state;
     }
-    if (state.walkthroughAnswers != null) {
-        patch.walkthroughAnswers = state.walkthroughAnswers;
+    if (prop.flowState && typeof prop.flowState === 'object') {
+        return mapLegacyFlowStateToStepGroups(prop.flowState);
     }
-    if (state.sellerConfirmations != null) {
-        patch.sellerConfirmations = state.sellerConfirmations;
-    }
-    return patch;
+    return {};
+}
+
+/** selectedAddons live under beforeLive; fall back to legacy root. */
+function getSelectedAddons(prop) {
+    const fromStep = prop?.beforeLive?.selectedAddons;
+    if (Array.isArray(fromStep)) return fromStep;
+    if (Array.isArray(prop?.selectedAddons)) return prop.selectedAddons;
+    return [];
 }
 const notificationService = require('./notificationService');
 const actionService = require('./actionService');
@@ -163,22 +254,24 @@ const propertyService = {
 
     /**
      * STAGE 1 — Initiation.
-     * Creates properties/{id} with empty flowState. occupancyType optional.
+     * Creates properties/{id}. Optional occupancy seeds basicDetail.
      */
     initiateProperty: async (userId, body = {}) => {
         const { occupancyType } = body || {};
         try {
             const occupancy = occupancyFromBe(occupancyType);
-            const flowState = occupancy ? { occupancy } : {};
             const propertyData = {
                 ownerId: userId,
                 status: 'initiated',
                 paid: false,
-                flowState,
+                furthestMajorIndex: 0,
                 createdAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             };
             if (occupancyType) propertyData.occupancyType = occupancyType;
+            if (occupancy) {
+                propertyData.basicDetail = { occupancy };
+            }
 
             const listingRef = await db.collection('properties').add(propertyData);
             return listingRef.id;
@@ -196,7 +289,7 @@ const propertyService = {
 
         return {
             listingId,
-            state: prop.flowState || {},
+            state: assembleProcessState(prop),
             propertyStatus: prop.status,
             updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
         };
@@ -212,22 +305,39 @@ const propertyService = {
             throw new AppError('Cannot edit a listing that has already been submitted', 409);
         }
 
-        const prevFlow = prop.flowState && typeof prop.flowState === 'object' ? prop.flowState : {};
-        const nextState =
-            state != null ? { ...prevFlow, ...state } : prevFlow;
+        const incoming = state != null ? mapLegacyFlowStateToStepGroups(state) : {};
+        const prev = assembleProcessState(prop);
+
+        const nextState = { ...prev };
+        if (typeof incoming.furthestMajorIndex === 'number') {
+            nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
+        }
+        // FE sends a full snapshot per step group — replace, don't shallow-merge
+        // (so omitted type extras like rural/duplex are cleared).
+        for (const k of STEP_GROUP_KEYS) {
+            if (incoming[k] != null) {
+                nextState[k] = incoming[k];
+            }
+        }
 
         const nextStatus = prop.status === 'initiated' ? 'draft' : prop.status;
         const update = {
-            flowState: nextState,
-            ...funnelFieldsFromState(nextState),
             status: nextStatus,
             updatedAt: FieldValue.serverTimestamp(),
+            flowState: FieldValue.delete(),
+            // Clear legacy lifted root keys (now live inside step groups only)
+            listedWithOtherBrokerage: FieldValue.delete(),
+            supportTier: FieldValue.delete(),
+            walkthroughAnswers: FieldValue.delete(),
+            sellerConfirmations: FieldValue.delete(),
+            selectedAddons: FieldValue.delete(),
         };
-        if (Array.isArray(nextState.selectedAddons)) {
-            update.selectedAddons = nextState.selectedAddons;
-        }
+
         if (typeof nextState.furthestMajorIndex === 'number') {
-            update.furthestMajorIndex = Math.max(0, Math.min(8, nextState.furthestMajorIndex));
+            update.furthestMajorIndex = nextState.furthestMajorIndex;
+        }
+        for (const k of STEP_GROUP_KEYS) {
+            if (nextState[k] != null) update[k] = nextState[k];
         }
 
         await propRef.update(update);
@@ -263,7 +373,7 @@ const propertyService = {
                 return {
                     process: {
                         listingId: id,
-                        state: data.flowState || {},
+                        state: assembleProcessState(data),
                         propertyStatus: data.status,
                         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
                     },
@@ -617,7 +727,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -644,7 +754,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -677,7 +787,7 @@ const propertyService = {
             }
 
             const completedSteps = data.progressTracker?.completedSteps ?? {};
-            const selectedAddons = data.selectedAddons ?? [];
+            const selectedAddons = getSelectedAddons(data);
 
             const dynamicSteps = selectedAddons
                 .map((addonId) => ADDONS_BY_ID[addonId])
@@ -743,8 +853,13 @@ const propertyService = {
         }
 
         try {
+            const prevBeforeLive =
+                existing.beforeLive && typeof existing.beforeLive === 'object'
+                    ? existing.beforeLive
+                    : {};
             await docRef.update({
-                selectedAddons,
+                beforeLive: { ...prevBeforeLive, selectedAddons },
+                selectedAddons: FieldValue.delete(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
