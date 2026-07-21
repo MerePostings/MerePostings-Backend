@@ -14,13 +14,29 @@ function occupancyFromBe(occupancyType) {
     return null;
 }
 
-/** Step-group keys stored once on the property root (no flowState). */
+/** Flat listing-process fields stored once on the property root (no flowState). */
+const PROCESS_FIELD_KEYS = [
+    'listedWithOtherBrokerage',
+    'supportTier',
+    'occupancy',
+    'propertyType',
+    'askingPrice',
+    'selectedAddons',
+    'walkthroughAnswers',
+    'sellerContact',
+    'ownership',
+    'mailingAddress',
+    'propertyDetails',
+    'featuresUpgrades',
+    'buyerCopy',
+    'sellerConfirmations',
+];
+
+/** Intermediate step-group keys to delete after migrating to flat. */
 const STEP_GROUP_KEYS = [
     'getStarted',
     'sellingStyle',
     'basicDetail',
-    'propertyDetails',
-    'featuresUpgrades',
     'tellBuyers',
     'beforeLive',
     'reviewListing',
@@ -31,100 +47,94 @@ function isStepGroupedState(state) {
     return STEP_GROUP_KEYS.some((k) => state[k] != null && typeof state[k] === 'object');
 }
 
-/** Map legacy flat flowState blob → step-grouped wire shape. */
-function mapLegacyFlowStateToStepGroups(flow) {
-    if (!flow || typeof flow !== 'object') return {};
-    const {
-        furthestMajorIndex,
-        listedWithOtherBrokerage,
-        supportTier,
-        walkthroughAnswers,
-        occupancy,
-        sellerContact,
-        ownership,
-        mailingAddress,
-        propertyType,
-        askingPrice,
-        propertyDetails,
-        featuresUpgrades,
-        buyerCopy,
-        selectedAddons,
-        sellerConfirmations,
-        getStarted,
-        sellingStyle,
-        basicDetail,
-        tellBuyers,
-        beforeLive,
-        reviewListing,
-    } = flow;
+function isFlatProcessState(state) {
+    if (!state || typeof state !== 'object') return false;
+    // Flat if any process field is present and we're not in step-group shape
+    if (isStepGroupedState(state)) return false;
+    return PROCESS_FIELD_KEYS.some((k) => k in state);
+}
 
-    // Already step-grouped (or partial) — pass through known keys.
-    if (isStepGroupedState(flow)) {
-        const out = {};
-        if (typeof furthestMajorIndex === 'number') out.furthestMajorIndex = furthestMajorIndex;
-        for (const k of STEP_GROUP_KEYS) {
-            if (flow[k] != null) out[k] = flow[k];
-        }
-        return out;
-    }
-
+/** Unwrap step-grouped wire → flat process fields. */
+function unwrapStepGroupsToFlat(grouped) {
+    if (!grouped || typeof grouped !== 'object') return {};
     const out = {};
-    if (typeof furthestMajorIndex === 'number') out.furthestMajorIndex = furthestMajorIndex;
-
-    out.getStarted = getStarted ?? {
-        listedWithOtherBrokerage: listedWithOtherBrokerage ?? null,
-    };
-    out.sellingStyle = sellingStyle ?? {
-        supportTier: supportTier ?? null,
-        walkthroughAnswers: walkthroughAnswers ?? {},
-    };
-    out.basicDetail = basicDetail ?? {
-        occupancy: occupancy ?? null,
-        sellerContact: sellerContact ?? {},
-        ownership: ownership ?? {},
-        mailingAddress: mailingAddress ?? {},
-    };
-
-    const pd = propertyDetails && typeof propertyDetails === 'object' ? { ...propertyDetails } : {};
-    if (propertyType != null) pd.propertyType = propertyType;
-    if (askingPrice !== undefined) pd.askingPrice = askingPrice;
-    out.propertyDetails = pd;
-
-    if (featuresUpgrades != null) out.featuresUpgrades = featuresUpgrades;
-    out.tellBuyers = tellBuyers ?? buyerCopy ?? {};
-    out.beforeLive = beforeLive ?? { selectedAddons: Array.isArray(selectedAddons) ? selectedAddons : [] };
-    out.reviewListing = reviewListing ?? sellerConfirmations ?? {};
-
+    if (typeof grouped.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = grouped.furthestMajorIndex;
+    }
+    if (grouped.getStarted) {
+        out.listedWithOtherBrokerage = grouped.getStarted.listedWithOtherBrokerage ?? null;
+    }
+    if (grouped.sellingStyle) {
+        out.supportTier = grouped.sellingStyle.supportTier ?? null;
+        out.walkthroughAnswers = grouped.sellingStyle.walkthroughAnswers ?? {};
+    }
+    if (grouped.basicDetail) {
+        out.occupancy = grouped.basicDetail.occupancy ?? null;
+        out.sellerContact = grouped.basicDetail.sellerContact ?? {};
+        out.ownership = grouped.basicDetail.ownership ?? {};
+        out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
+    }
+    if (grouped.propertyDetails && typeof grouped.propertyDetails === 'object') {
+        const { propertyType, askingPrice, ...rest } = grouped.propertyDetails;
+        out.propertyDetails = rest;
+        if (propertyType !== undefined) out.propertyType = propertyType;
+        if (askingPrice !== undefined) out.askingPrice = askingPrice;
+    }
+    if (grouped.featuresUpgrades != null) out.featuresUpgrades = grouped.featuresUpgrades;
+    if (grouped.tellBuyers != null) out.buyerCopy = grouped.tellBuyers;
+    if (grouped.beforeLive?.selectedAddons != null) {
+        out.selectedAddons = grouped.beforeLive.selectedAddons;
+    }
+    if (grouped.reviewListing != null) out.sellerConfirmations = grouped.reviewListing;
     return out;
 }
 
-/** Assemble listing-process `state` from property root step groups (legacy flowState fallback). */
+/** Normalize incoming PATCH state (flat, step-grouped, or legacy flowState blob) → flat. */
+function normalizeIncomingState(state) {
+    if (!state || typeof state !== 'object') return {};
+    if (isStepGroupedState(state)) return unwrapStepGroupsToFlat(state);
+    // Already flat (or legacy flat flowState contents)
+    const out = {};
+    if (typeof state.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = state.furthestMajorIndex;
+    }
+    for (const k of PROCESS_FIELD_KEYS) {
+        if (k in state) out[k] = state[k];
+    }
+    return out;
+}
+
+/** Assemble listing-process `state` from property root (flat preferred). */
 function assembleProcessState(prop) {
-    if (isStepGroupedState(prop)) {
+    if (isFlatProcessState(prop)) {
         const state = {};
         if (typeof prop.furthestMajorIndex === 'number') {
             state.furthestMajorIndex = prop.furthestMajorIndex;
         }
-        for (const k of STEP_GROUP_KEYS) {
-            if (prop[k] != null) state[k] = prop[k];
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in prop) state[k] = prop[k];
+        }
+        // Prefer root selectedAddons; fall back to brief beforeLive window
+        if (!Array.isArray(state.selectedAddons) && Array.isArray(prop.beforeLive?.selectedAddons)) {
+            state.selectedAddons = prop.beforeLive.selectedAddons;
         }
         return state;
     }
+    if (isStepGroupedState(prop)) {
+        return unwrapStepGroupsToFlat(prop);
+    }
     if (prop.flowState && typeof prop.flowState === 'object') {
-        return mapLegacyFlowStateToStepGroups(prop.flowState);
+        return normalizeIncomingState(prop.flowState);
     }
     return {};
 }
 
-/** selectedAddons live under beforeLive; fall back to legacy root. */
+/** selectedAddons at root; fall back to beforeLive (step-group window). */
 function getSelectedAddons(prop) {
-    const fromStep = prop?.beforeLive?.selectedAddons;
-    if (Array.isArray(fromStep)) return fromStep;
     if (Array.isArray(prop?.selectedAddons)) return prop.selectedAddons;
+    if (Array.isArray(prop?.beforeLive?.selectedAddons)) return prop.beforeLive.selectedAddons;
     return [];
 }
-const notificationService = require('./notificationService');
-const actionService = require('./actionService');
 
 const buildAddressName = (location) => {
     try {
@@ -254,7 +264,7 @@ const propertyService = {
 
     /**
      * STAGE 1 — Initiation.
-     * Creates properties/{id}. Optional occupancy seeds basicDetail.
+     * Creates properties/{id}. Optional occupancy seeds flat occupancy field.
      */
     initiateProperty: async (userId, body = {}) => {
         const { occupancyType } = body || {};
@@ -270,7 +280,7 @@ const propertyService = {
             };
             if (occupancyType) propertyData.occupancyType = occupancyType;
             if (occupancy) {
-                propertyData.basicDetail = { occupancy };
+                propertyData.occupancy = occupancy;
             }
 
             const listingRef = await db.collection('properties').add(propertyData);
@@ -305,17 +315,16 @@ const propertyService = {
             throw new AppError('Cannot edit a listing that has already been submitted', 409);
         }
 
-        const incoming = state != null ? mapLegacyFlowStateToStepGroups(state) : {};
+        const incoming = state != null ? normalizeIncomingState(state) : {};
         const prev = assembleProcessState(prop);
 
         const nextState = { ...prev };
         if (typeof incoming.furthestMajorIndex === 'number') {
             nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
         }
-        // FE sends a full snapshot per step group — replace, don't shallow-merge
-        // (so omitted type extras like rural/duplex are cleared).
-        for (const k of STEP_GROUP_KEYS) {
-            if (incoming[k] != null) {
+        // FE sends a full flat snapshot — replace fields present on incoming.
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in incoming) {
                 nextState[k] = incoming[k];
             }
         }
@@ -325,19 +334,17 @@ const propertyService = {
             status: nextStatus,
             updatedAt: FieldValue.serverTimestamp(),
             flowState: FieldValue.delete(),
-            // Clear legacy lifted root keys (now live inside step groups only)
-            listedWithOtherBrokerage: FieldValue.delete(),
-            supportTier: FieldValue.delete(),
-            walkthroughAnswers: FieldValue.delete(),
-            sellerConfirmations: FieldValue.delete(),
-            selectedAddons: FieldValue.delete(),
         };
+        // Clear intermediate step-group keys
+        for (const k of STEP_GROUP_KEYS) {
+            update[k] = FieldValue.delete();
+        }
 
         if (typeof nextState.furthestMajorIndex === 'number') {
             update.furthestMajorIndex = nextState.furthestMajorIndex;
         }
-        for (const k of STEP_GROUP_KEYS) {
-            if (nextState[k] != null) update[k] = nextState[k];
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in nextState) update[k] = nextState[k];
         }
 
         await propRef.update(update);
@@ -441,41 +448,12 @@ const propertyService = {
      */
     markSubmitted: async (listingId) => {
         try {
-            const docRef = db.collection('properties').doc(listingId);
-            await docRef.update({
+            await db.collection('properties').doc(listingId).update({
                 status: 'submitted',
                 paid: true,
                 submittedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
-
-            let data;
-            try {
-                const snap = await docRef.get();
-                data = snap.data();
-                if (data?.ownerId) {
-                    await notificationService.createNotification({
-                        userId: data.ownerId,
-                        type: 'status_change',
-                        severity: 'success',
-                        title: 'Listing submitted',
-                        message: 'Your listing has been submitted and is now being reviewed.',
-                        listingId,
-                        listingAddress: buildAddressName(data.location || {}),
-                        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
-                        actionLabel: 'View Listing',
-                        sendEmail: false,
-                    });
-                }
-            } catch (notifyErr) {
-                console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
-            }
-
-            try {
-                await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
-            } catch (actionErr) {
-                console.error('[actions] Failed to generate actions for listing:', actionErr);
-            }
         } catch (e) {
             console.error("Error marking property submitted:", e);
         }
@@ -527,11 +505,6 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
-            try {
-                await actionService.completeUploadAction(listingId, mediaType);
-            } catch (actionErr) {
-                console.error('[actions] Failed to auto-complete upload action:', actionErr);
-            }
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
@@ -676,41 +649,43 @@ const propertyService = {
 
     getOwnerMostRecentProperty: async (uid) => {
         try {
-            const STATUSES = ["active", "draft", "closed", "pending"];
+            const snapshot = await db
+                .collection("properties")
+                .where("ownerId", "==", uid)
+                .orderBy("updatedAt", "desc")
+                .get();
 
-            const [topSnapshot, ...countSnapshots] = await Promise.all([
-                db.collection("properties")
-                    .where("ownerId", "==", uid)
-                    .orderBy("updatedAt", "desc")
-                    .limit(1)
-                    .get(),
-                ...STATUSES.map((status) =>
-                    db.collection("properties")
-                        .where("ownerId", "==", uid)
-                        .where("status", "==", status)
-                        .count()
-                        .get()
-                ),
-            ]);
-
-            const stats = STATUSES.reduce((acc, status, i) => {
-                acc[status] = countSnapshots[i].data().count;
-                return acc;
-            }, { active: 0, draft: 0, closed: 0, pending: 0 });
-
-            if (topSnapshot.empty) {
-                return { property: null, stats };
+            if (snapshot.empty) {
+                return {
+                    property: null,
+                    stats: { active: 0, draft: 0, closed: 0, pending: 0 },
+                };
             }
 
-            const doc = topSnapshot.docs[0];
-            const data = doc.data();
-            const property = {
-                id: doc.id,
-                ...data,
-                updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-            };
+            const properties = snapshot.docs.map((doc) => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+                };
+            });
 
-            return { property, stats };
+            const stats = properties.reduce(
+                (acc, property) => {
+                    const status = property.status;
+                    if (acc[status] !== undefined) {
+                        acc[status] += 1;
+                    }
+                    return acc;
+                },
+                { active: 0, draft: 0, closed: 0, pending: 0 }
+            );
+
+            return {
+                property: properties[0], // most recent, since ordered by updatedAt desc
+                stats,
+            };
         } catch (e) {
             console.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
@@ -853,13 +828,9 @@ const propertyService = {
         }
 
         try {
-            const prevBeforeLive =
-                existing.beforeLive && typeof existing.beforeLive === 'object'
-                    ? existing.beforeLive
-                    : {};
             await docRef.update({
-                beforeLive: { ...prevBeforeLive, selectedAddons },
-                selectedAddons: FieldValue.delete(),
+                selectedAddons,
+                beforeLive: FieldValue.delete(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
