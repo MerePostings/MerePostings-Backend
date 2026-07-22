@@ -104,10 +104,7 @@ describe("POST /v1/webhook/stripe-webhook", () => {
     expect(addTransaction).not.toHaveBeenCalled();
   });
 
-  // Documents current behavior: no `break` after the case means execution
-  // always falls through into `default:` and logs "Unhandled event type:",
-  // even on a successful payment_intent.succeeded. Cosmetic, not fixed here.
-  test("logs 'Unhandled event type:' even on a successful payment_intent.succeeded (known fallthrough)", async () => {
+  test("does not log Unhandled event type for payment_intent.succeeded", async () => {
     stripe.webhooks.constructEvent.mockReturnValueOnce(baseEvent);
     markSubmitted.mockResolvedValueOnce(undefined);
     sendPaymentConfirmationEmail.mockResolvedValueOnce(undefined);
@@ -116,7 +113,7 @@ describe("POST /v1/webhook/stripe-webhook", () => {
 
     await post(buildApp(), baseEvent);
 
-    expect(logSpy).toHaveBeenCalledWith("Unhandled event type:", "payment_intent.succeeded");
+    expect(logSpy).not.toHaveBeenCalledWith("Unhandled event type:", "payment_intent.succeeded");
     logSpy.mockRestore();
   });
 

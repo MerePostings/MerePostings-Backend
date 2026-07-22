@@ -136,6 +136,30 @@ function getSelectedAddons(prop) {
     return [];
 }
 
+function isPlainObject(value) {
+    return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Deep-merge plain objects for listing-process nested fields.
+ * Arrays / scalars / null replace. Used so sparse nested PATCHes keep siblings.
+ */
+function deepMergePlainObjects(prev, next) {
+    if (!isPlainObject(next)) return next;
+    if (!isPlainObject(prev)) return { ...next };
+    const out = { ...prev };
+    for (const key of Object.keys(next)) {
+        const n = next[key];
+        const p = prev[key];
+        if (isPlainObject(n) && isPlainObject(p)) {
+            out[key] = deepMergePlainObjects(p, n);
+        } else {
+            out[key] = n;
+        }
+    }
+    return out;
+}
+
 const buildAddressName = (location) => {
     try {
         const parts = [
@@ -322,10 +346,10 @@ const propertyService = {
         if (typeof incoming.furthestMajorIndex === 'number') {
             nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
         }
-        // FE sends a full flat snapshot — replace fields present on incoming.
+        // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
         for (const k of PROCESS_FIELD_KEYS) {
             if (k in incoming) {
-                nextState[k] = incoming[k];
+                nextState[k] = deepMergePlainObjects(prev[k], incoming[k]);
             }
         }
 
