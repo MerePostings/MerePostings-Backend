@@ -106,28 +106,25 @@ describe("selectedAddonsSchema", () => {
 });
 
 describe("listingProcessPatchSchema", () => {
-  test("accepts furthestMajorIndex alone", () => {
-    const {error} = listingProcessPatchSchema.validate({furthestMajorIndex: 2});
-    expect(error).toBeUndefined();
-  });
-
   test("accepts state alone", () => {
     const {error} = listingProcessPatchSchema.validate({state: {anything: "goes"}});
     expect(error).toBeUndefined();
   });
 
-  test("rejects payload with neither furthestMajorIndex nor state", () => {
+  test("accepts state with furthestMajorIndex inside", () => {
+    const {error} = listingProcessPatchSchema.validate({
+      state: {furthestMajorIndex: 2, occupancy: "owner"},
+    });
+    expect(error).toBeUndefined();
+  });
+
+  test("rejects payload without state", () => {
     const {error} = listingProcessPatchSchema.validate({});
     expect(error).toBeDefined();
   });
 
-  test.each([0, 8])("accepts furthestMajorIndex boundary %i", (furthestMajorIndex) => {
-    const {error} = listingProcessPatchSchema.validate({furthestMajorIndex});
-    expect(error).toBeUndefined();
-  });
-
-  test.each([-1, 9])("rejects furthestMajorIndex out of range %i", (furthestMajorIndex) => {
-    const {error} = listingProcessPatchSchema.validate({furthestMajorIndex});
+  test("rejects non-object state", () => {
+    const {error} = listingProcessPatchSchema.validate({state: "nope"});
     expect(error).toBeDefined();
   });
 });
