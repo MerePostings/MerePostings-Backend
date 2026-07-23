@@ -1,3 +1,4 @@
+const logger = require('firebase-functions/logger');
 const { db } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -47,7 +48,7 @@ const cascadeCompleteStep = async (listingId, progressStepId) => {
         const propertyService = require('./propertyService');
         await propertyService.markStepCompleted(listingId, progressStepId);
     } catch (stepErr) {
-        console.error('[actions] Failed to cascade-complete progress step:', stepErr);
+        logger.error('[actions] Failed to cascade-complete progress step:', stepErr);
     }
 };
 
@@ -138,7 +139,7 @@ const actionService = {
                     sendEmail: false,
                 });
             } catch (notifyErr) {
-                console.error('[actions] Failed to notify owner of new actions:', notifyErr);
+                logger.error('[actions] Failed to notify owner of new actions:', notifyErr);
             }
         }
     },
@@ -265,7 +266,7 @@ const actionService = {
                 sendEmail: false,
             });
         } catch (notifyErr) {
-            console.error('[actions] Failed to notify owner of confirmed appointment:', notifyErr);
+            logger.error('[actions] Failed to notify owner of confirmed appointment:', notifyErr);
         }
 
         const updated = await docRef.get();
@@ -340,7 +341,7 @@ const actionService = {
                 sendEmail: true,
             });
         } catch (notifyErr) {
-            console.error('[actions] Failed to notify owner of proposed time:', notifyErr);
+            logger.error('[actions] Failed to notify owner of proposed time:', notifyErr);
         }
 
         const updated = await docRef.get();

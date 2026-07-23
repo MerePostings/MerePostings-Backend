@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
@@ -89,9 +90,16 @@ const notificationService = {
         if (!SEVERITIES.includes(severity)) throw new AppError(`Unknown notification severity: ${severity}`, 400);
         if (!title || !message) throw new AppError('title and message are required', 400);
 
-        const userSnap = await db.collection('users').doc(userId).get();
-        if (!userSnap.exists) throw new AppError('User not found', 404);
-        const userData = userSnap.data();
+        let userData;
+        try {
+            const userSnap = await db.collection('users').doc(userId).get();
+            if (!userSnap.exists) throw new AppError('User not found', 404);
+            userData = userSnap.data();
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            logger.error('[notif] Error fetching user for notification:', e);
+            throw new AppError('Failed to fetch user', 500);
+        }
 
         const notification = {
             userId,
@@ -111,11 +119,6 @@ const notificationService = {
         const pointerRef = db.collection('dashboardPointers').doc(userId);
 
         try {
-            // Reads must precede writes in a Firestore transaction — read the
-            // pointer's current recentNotificationIds first, then write the new
-            // notification and the updated pointer together atomically. This
-            // keeps "which notifications are recent" in sync at creation time
-            // without a separate Firestore trigger.
             await db.runTransaction(async (tx) => {
                 const pointerSnap = await tx.get(pointerRef);
                 const currentIds = pointerSnap.exists ? (pointerSnap.data().recentNotificationIds || []) : [];
@@ -134,7 +137,7 @@ const notificationService = {
                 }, { merge: true });
             });
         } catch (e) {
-            console.error('[notif] Error creating notification:', e);
+            logger.error('[notif] Error creating notification:', e);
             throw new AppError('Failed to create notification', 500);
         }
 
@@ -145,11 +148,11 @@ const notificationService = {
                 const { subject, htmlBody } = renderNotificationEmail(notification);
                 await sendNotificationEmail(userData.email, subject, htmlBody);
             } catch (e) {
-                console.error('[notif] Error sending notification email:', e);
+                logger.error('[notif] Error sending notification email:', e);
             }
         }
 
-        console.log(`[notif] created ${notifRef.id} for user ${userId} (type=${type}, email=${shouldEmail})`);
+        logger.info(`[notif] created ${notifRef.id} for user ${userId} (type=${type}, email=${shouldEmail})`);
 
         return { id: notifRef.id, ...notification };
     },
@@ -161,113 +164,141 @@ const notificationService = {
      * (bounded, admin-only) lists in adminService.js.
      */
     listNotifications: async (userId, { cursorId, limit } = {}) => {
-        const pageSize = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+        try{
 
-        let query = db.collection('notifications')
-            .where('userId', '==', userId)
-            .orderBy('createdAt', 'desc');
-
-        if (cursorId) {
-            const cursorSnap = await db.collection('notifications').doc(cursorId).get();
-            if (cursorSnap.exists && cursorSnap.data().userId === userId) {
-                query = query.startAfter(cursorSnap);
+            const pageSize = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+    
+            let query = db.collection('notifications')
+                .where('userId', '==', userId)
+                .orderBy('createdAt', 'desc');
+    
+            if (cursorId) {
+                const cursorSnap = await db.collection('notifications').doc(cursorId).get();
+                if (cursorSnap.exists && cursorSnap.data().userId === userId) {
+                    query = query.startAfter(cursorSnap);
+                }
             }
+    
+            const snapshot = await query.limit(pageSize + 1).get();
+            const docs = snapshot.docs.slice(0, pageSize);
+            const hasMore = snapshot.docs.length > pageSize;
+    
+            const notifications = docs.map((doc) => formatNotification(doc.id, doc.data()));
+    
+            return {
+                notifications,
+                nextCursor: hasMore ? docs[docs.length - 1].id : null,
+            };
+        }catch(e){
+            throw new AppError(e.message || 'Failed to fetch notifications', e.statusCode || 500)
         }
-
-        const snapshot = await query.limit(pageSize + 1).get();
-        const docs = snapshot.docs.slice(0, pageSize);
-        const hasMore = snapshot.docs.length > pageSize;
-
-        const notifications = docs.map((doc) => formatNotification(doc.id, doc.data()));
-
-        return {
-            notifications,
-            nextCursor: hasMore ? docs[docs.length - 1].id : null,
-        };
     },
 
     getUnreadCount: async (userId) => {
-        const snapshot = await db.collection('notifications')
-            .where('userId', '==', userId)
-            .where('isRead', '==', false)
-            .count()
-            .get();
-
-        return snapshot.data().count;
-    },
-
-    markAsRead: async (userId, notificationId) => {
-        const docRef = db.collection('notifications').doc(notificationId);
-        const snap = await docRef.get();
-
-        if (!snap.exists) throw new AppError('Notification not found', 404);
-        if (snap.data().userId !== userId) throw new AppError('Unauthorized access to this notification', 403);
-
-        if (!snap.data().isRead) {
-            const batch = db.batch();
-            batch.update(docRef, {
-                isRead: true,
-                readAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-            batch.set(db.collection('dashboardPointers').doc(userId), {
-                ownerId: userId,
-                unreadNotificationsCount: FieldValue.increment(-1),
-                updatedAt: FieldValue.serverTimestamp(),
-            }, { merge: true });
-            await batch.commit();
-        }
-
-        return { id: notificationId, isRead: true };
-    },
-
-    markAllAsRead: async (userId) => {
-        const batchSize = 400;
-        let updatedCount = 0;
-        const pointerRef = db.collection('dashboardPointers').doc(userId);
-
-        for (;;) {
+        try {
             const snapshot = await db.collection('notifications')
                 .where('userId', '==', userId)
                 .where('isRead', '==', false)
-                .limit(batchSize)
+                .count()
                 .get();
 
-            if (snapshot.empty) break;
+            return snapshot.data().count;
+        } catch (e) {
+            logger.error('[notif] Error fetching unread notifications count:', e);
+            throw new AppError('Failed to fetch unread notifications count', 500);
+        }
+    },
 
-            const batch = db.batch();
-            snapshot.docs.forEach((doc) => {
-                batch.update(doc.ref, {
+    markAsRead: async (userId, notificationId) => {
+        try {
+            const docRef = db.collection('notifications').doc(notificationId);
+            const snap = await docRef.get();
+
+            if (!snap.exists) throw new AppError('Notification not found', 404);
+            if (snap.data().userId !== userId) throw new AppError('Unauthorized access to this notification', 403);
+
+            if (!snap.data().isRead) {
+                const batch = db.batch();
+                batch.update(docRef, {
                     isRead: true,
                     readAt: FieldValue.serverTimestamp(),
                     updatedAt: FieldValue.serverTimestamp(),
                 });
-            });
-            batch.set(pointerRef, {
-                ownerId: userId,
-                unreadNotificationsCount: FieldValue.increment(-snapshot.docs.length),
-                updatedAt: FieldValue.serverTimestamp(),
-            }, { merge: true });
-            await batch.commit();
-            updatedCount += snapshot.docs.length;
+                batch.set(db.collection('dashboardPointers').doc(userId), {
+                    ownerId: userId,
+                    unreadNotificationsCount: FieldValue.increment(-1),
+                    updatedAt: FieldValue.serverTimestamp(),
+                }, { merge: true });
+                await batch.commit();
+            }
 
-            if (snapshot.docs.length < batchSize) break;
+            return { id: notificationId, isRead: true };
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            logger.error('[notif] Error marking notification as read:', e);
+            throw new AppError('Failed to mark notification as read', 500);
         }
+    },
 
-        return { updatedCount };
+    markAllAsRead: async (userId) => {
+        try {
+            const batchSize = 400;
+            let updatedCount = 0;
+            const pointerRef = db.collection('dashboardPointers').doc(userId);
+
+            for (;;) {
+                const snapshot = await db.collection('notifications')
+                    .where('userId', '==', userId)
+                    .where('isRead', '==', false)
+                    .limit(batchSize)
+                    .get();
+
+                if (snapshot.empty) break;
+
+                const batch = db.batch();
+                snapshot.docs.forEach((doc) => {
+                    batch.update(doc.ref, {
+                        isRead: true,
+                        readAt: FieldValue.serverTimestamp(),
+                        updatedAt: FieldValue.serverTimestamp(),
+                    });
+                });
+                batch.set(pointerRef, {
+                    ownerId: userId,
+                    unreadNotificationsCount: FieldValue.increment(-snapshot.docs.length),
+                    updatedAt: FieldValue.serverTimestamp(),
+                }, { merge: true });
+                await batch.commit();
+                updatedCount += snapshot.docs.length;
+
+                if (snapshot.docs.length < batchSize) break;
+            }
+
+            return { updatedCount };
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            logger.error('[notif] Error marking all notifications as read:', e);
+            throw new AppError('Failed to mark all notifications as read', 500);
+        }
     },
 
     getPreferences: async (userId) => {
-        const snap = await db.collection('users').doc(userId).get();
-        if (!snap.exists) throw new AppError('User not found', 404);
+        try {
+            const snap = await db.collection('users').doc(userId).get();
+            if (!snap.exists) throw new AppError('User not found', 404);
 
-        const stored = snap.data().notificationPreferences || {};
-        const preferences = {};
-        NOTIFICATION_TYPES.forEach((type) => {
-            preferences[type] = stored[type] !== false;
-        });
+            const stored = snap.data().notificationPreferences || {};
+            const preferences = {};
+            NOTIFICATION_TYPES.forEach((type) => {
+                preferences[type] = stored[type] !== false;
+            });
 
-        return preferences;
+            return preferences;
+        } catch (e) {
+            if (e instanceof AppError) throw e;
+            logger.error('[notif] Error fetching notification preferences:', e);
+            throw new AppError('Failed to fetch notification preferences', 500);
+        }
     },
 
     /**
@@ -291,7 +322,7 @@ const notificationService = {
         try {
             await db.collection('users').doc(userId).update(dotPathUpdate);
         } catch (e) {
-            console.error('[notif] Error updating notification preferences:', e);
+            logger.error('[notif] Error updating notification preferences:', e);
             throw new AppError('Failed to update notification preferences', 500);
         }
 

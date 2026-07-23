@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError")
 const { FieldValue } = require('firebase-admin/firestore');
@@ -16,7 +17,7 @@ const stripeService = {
             await userRef.set({ stripeCustomerId: customer.id }, { merge: true });
             return customer.id;
         }catch(e){
-            console.log(e)
+            logger.error(e)
             throw new AppError("Failed to Create Customer", 400);
         }
     },
@@ -70,7 +71,7 @@ const stripeService = {
             return paymentIntent.client_secret;
 
         } catch(e) {
-            console.error(e)
+            logger.error(e)
             throw new AppError(e.message || "Failed to subscribe", e.statusCode || 500);
         }
     },

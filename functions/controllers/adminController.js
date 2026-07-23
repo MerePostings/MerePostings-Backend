@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const adminService = require("../services/adminService");
 const actionService = require("../services/actionService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
@@ -62,7 +63,7 @@ const adminController = {
     zipStream.pipe(res);
 
     zipStream.on('error', (err) => {
-      console.error('Zip stream error:', err);
+      logger.error('Zip stream error:', err);
       if (!res.headersSent) {
         res.status(500).json({ error: 'Failed to download property zip' });
       }

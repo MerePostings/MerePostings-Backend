@@ -1,4 +1,5 @@
 require("dotenv").config();
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const archiver = require('archiver');
@@ -249,7 +250,7 @@ const adminService = {
           .join(' ') || 'Unlisted Property';
 
         const photos = d.media?.photos || [];
-        console.log('Photos for listing', photos.length);
+        logger.info('Photos for listing', photos.length);
         const thumbnail = photos[0]?.url || null;
 
         return {
@@ -281,7 +282,7 @@ const adminService = {
 
       return { listings: paginated, total, page: pageNum, limit: pageSize };
     } catch (e) {
-      console.log(e)
+      logger.info(e)
       throw new AppError(e.message || 'Failed to fetch listings', 500);
     }
   },
@@ -370,7 +371,7 @@ const adminService = {
             actionLabel: 'View Listing',
           });
         } catch (notifyErr) {
-          console.error('[notif] Failed to notify owner of status change:', notifyErr);
+          logger.error('[notif] Failed to notify owner of status change:', notifyErr);
         }
       }
 
@@ -443,7 +444,7 @@ const adminService = {
               });
             }
           } catch (error) {
-            console.warn(`Failed to download photo ${i + 1}:`, error.message);
+            logger.warn(`Failed to download photo ${i + 1}:`, error.message);
           }
         }
       }
@@ -469,7 +470,7 @@ const adminService = {
               });
             }
           } catch (error) {
-            console.warn(`Failed to download document ${i + 1}:`, error.message);
+            logger.warn(`Failed to download document ${i + 1}:`, error.message);
           }
         }
       }
@@ -479,7 +480,7 @@ const adminService = {
       return { folderName, zipStream };
 
     } catch (e) {
-      console.error("Error in downloadPropertyAsZip:", e);
+      logger.error("Error in downloadPropertyAsZip:", e);
       throw new AppError(`Failed to create property zip: ${e.message}`, 500);
     }
   },

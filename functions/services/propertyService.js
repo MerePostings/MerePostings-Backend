@@ -1,4 +1,5 @@
 const path = require('path');
+const logger = require("firebase-functions/logger");
 const { getStepsForListing } = require("../data/progressTrackerSteps")
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
@@ -25,7 +26,7 @@ const buildAddressName = (location) => {
         const municipality = location.municipality ?? null;
         return [parts, unit, municipality].filter(Boolean).join(', ');
     } catch (e) {
-        console.log(e)
+        logger.error(e)
     }
 }
 
@@ -130,7 +131,7 @@ const propertyService = {
                 return newListingId;
             }
         } catch (e) {
-            console.error("Error saving property:", e);
+            logger.error("Error saving property:", e);
             throw new AppError("Failed to save Property", 500);
         }
     },
@@ -174,7 +175,7 @@ const propertyService = {
 
             return listingId;
         } catch (e) {
-            console.error("Error initiating property:", e);
+            logger.error("Error initiating property:", e);
             throw new AppError("Failed to initiate property", 500);
         }
     },
@@ -311,7 +312,7 @@ const propertyService = {
 
             return { process: null };
         } catch (e) {
-            console.error('Error in getOwnerMostRecentProcess:', e);
+            logger.error('Error in getOwnerMostRecentProcess:', e);
             throw new AppError(`Failed to fetch most recent listing process: ${e.message}`, 500);
         }
     },
@@ -357,7 +358,7 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
-            console.error("Error saving draft field:", e);
+            logger.error("Error saving draft field:", e);
             throw new AppError("Failed to save field", 500);
         }
 
@@ -397,16 +398,16 @@ const propertyService = {
                     });
                 }
             } catch (notifyErr) {
-                console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
+                logger.error('[notif] Failed to notify owner of listing submission:', notifyErr);
             }
 
             try {
                 await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
             } catch (actionErr) {
-                console.error('[actions] Failed to generate actions for listing:', actionErr);
+                logger.error('[actions] Failed to generate actions for listing:', actionErr);
             }
         } catch (e) {
-            console.error("Error marking property submitted:", e);
+            logger.error("Error marking property submitted:", e);
         }
     },
 
@@ -459,7 +460,7 @@ const propertyService = {
             try {
                 await actionService.completeUploadAction(listingId, mediaType);
             } catch (actionErr) {
-                console.error('[actions] Failed to auto-complete upload action:', actionErr);
+                logger.error('[actions] Failed to auto-complete upload action:', actionErr);
             }
 
         } catch (firebaseErr) {
@@ -496,7 +497,7 @@ const propertyService = {
                 await storage.file(filePath).delete();
             }
         } catch (e) {
-            console.error("Storage deletion failed (non-critical):", e.message);
+            logger.error("Storage deletion failed (non-critical):", e.message);
         }
     },
 
@@ -539,7 +540,7 @@ const propertyService = {
             };
 
         } catch (e) {
-            console.error("Error in getListing:", e);
+            logger.error("Error in getListing:", e);
             throw new AppError(`Failed to fetch listing: ${e.message}`, 500);
         }
     },
@@ -560,7 +561,7 @@ const propertyService = {
 
             return properties;
         } catch (e) {
-            console.error("Error in getOwnerProperty:", e);
+            logger.error("Error in getOwnerProperty:", e);
             throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
         }
     },
@@ -641,7 +642,7 @@ const propertyService = {
 
             return { property, stats };
         } catch (e) {
-            console.error("Error in getOwnerMostRecentProperty:", e);
+            logger.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
         }
     },
@@ -668,7 +669,7 @@ const propertyService = {
             });
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error marking step completed:", e);
+            logger.error("Error marking step completed:", e);
             throw new AppError(`Failed to mark step as completed: ${e.message}`, 500);
         }
     },
@@ -695,7 +696,7 @@ const propertyService = {
             });
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error marking step incomplete:", e);
+            logger.error("Error marking step incomplete:", e);
             throw new AppError(`Failed to mark step as incomplete: ${e.message}`, 500);
         }
     },
@@ -744,7 +745,7 @@ const propertyService = {
 
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error in getProgressTracker:", e);
+            logger.error("Error in getProgressTracker:", e);
             throw new AppError(`Failed to fetch progress tracker: ${e.message}`, 500);
         }
     },
@@ -787,7 +788,7 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
-            console.error("Error saving selected addons:", e);
+            logger.error("Error saving selected addons:", e);
             throw new AppError("Failed to save selected addons", 500);
         }
 

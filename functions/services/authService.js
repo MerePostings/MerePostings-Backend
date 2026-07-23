@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const firebaseAdmin = require("../config/firebaseAdmin");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
@@ -89,7 +90,7 @@ const authService = {
       await sendVerificationEmail(email, emailVerificationLink, firstName);
       
     }catch (err) {
-      console.log(err)
+      logger.error(err)
       try{
         if (err instanceof AppError) {
           throw new AppError(err.message, err.statusCode)

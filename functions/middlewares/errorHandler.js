@@ -1,3 +1,5 @@
+const logger = require("firebase-functions/logger");
+
 const devError = (err, res) => {
     res.status(err.statusCode).json({
         message: err.message,
@@ -7,7 +9,7 @@ const devError = (err, res) => {
 }
 
 const prodError = (err, res) => {
-    console.log(err)
+    logger.error(err)
     if(err.isOperational){
         res.status(err.statusCode).json({
             message: err.message

@@ -1,4 +1,5 @@
 require("dotenv").config();
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { calendar, calendarId } = require("../config/googleOAuth");
@@ -21,16 +22,16 @@ const googleFunctionsService = {
       });
 
       if (!response || !response.data) {
-        console.error("No response data from Google Calendar API");
+        logger.error("No response data from Google Calendar API");
         throw new AppError("Invalid response from Google Calendar", 500);
       }
 
-      console.log("Calendar response:", response.data);
+      logger.info("Calendar response:", response.data);
       res.json(response.data);
     } catch (err) {
-      console.error("Calendar API error:", err);
-      console.error("Error details:", err.message);
-      console.error("Error code:", err.code);
+      logger.error("Calendar API error:", err);
+      logger.error("Error details:", err.message);
+      logger.error("Error code:", err.code);
       throw new AppError("Failed to fetch calendars", 500);
     }
   },
@@ -110,7 +111,7 @@ const googleFunctionsService = {
       return response.data;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      console.log(error);
+      logger.error(error);
       throw new AppError("Failed to add booking. Please try again later.", 500);
     }
   },
@@ -166,7 +167,7 @@ const googleFunctionsService = {
         days: unbookableDays,
       };
     } catch (err) {
-      console.error("Month availability check error:", err);
+      logger.error("Month availability check error:", err);
       throw new AppError("Failed to check month availability", 500);
     }
   },
@@ -232,7 +233,7 @@ const googleFunctionsService = {
         fullyBooked: availableSlots.length === 0,
       };
     } catch (err) {
-      console.error("Day availability check error:", err);
+      logger.error("Day availability check error:", err);
       throw new AppError("Failed to check day availability", 500);
     }
   },
