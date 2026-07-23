@@ -292,9 +292,83 @@ const adminService = {
       if (!doc.exists) throw new AppError('Listing not found', 404);
 
       const d = doc.data();
-      return { id: doc.id, ...d };
+      const procSnap = await db.collection('listingProcesses').doc(listingId).get();
+      const listingProcess = procSnap.exists
+        ? {
+            state: procSnap.data().state || {},
+            furthestMajorIndex: procSnap.data().furthestMajorIndex ?? 0,
+          }
+        : null;
+
+      return { id: doc.id, ...d, listingProcess };
     } catch (e) {
       throw new AppError(e.message || 'Failed to fetch listing', e.statusCode || 500);
+    }
+  },
+
+  /**
+   * Admin listing-process update: no owner check, no submitted lock.
+   * Merges FE process state and projects onto properties (same as seller).
+   */
+  updateListingProcess: async (listingId, state) => {
+    try {
+      const { FieldValue } = require('firebase-admin/firestore');
+      const { projectStateToProperty } = require('../utils/projectListingState');
+
+      if (!listingId) throw new AppError('listingId is required', 400);
+      if (state == null || typeof state !== 'object' || Array.isArray(state)) {
+        throw new AppError('state object is required', 400);
+      }
+
+      const propRef = db.collection('properties').doc(listingId);
+      const propSnap = await propRef.get();
+      if (!propSnap.exists) throw new AppError('Listing not found', 404);
+
+      const prop = propSnap.data();
+      const procRef = db.collection('listingProcesses').doc(listingId);
+      const procSnap = await procRef.get();
+      const prev = procSnap.exists
+        ? procSnap.data()
+        : {
+            ownerId: prop.ownerId || null,
+            listingId,
+            furthestMajorIndex: 0,
+            state: {},
+          };
+
+      const nextState = { ...(prev.state || {}), ...state };
+
+      await procRef.set(
+        {
+          ownerId: prev.ownerId || prop.ownerId || null,
+          listingId,
+          furthestMajorIndex: prev.furthestMajorIndex ?? 0,
+          state: nextState,
+          updatedAt: FieldValue.serverTimestamp(),
+          ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+        },
+        { merge: true }
+      );
+
+      const propertyPatch = projectStateToProperty(nextState);
+      if (Object.keys(propertyPatch).length > 0) {
+        await propRef.update({
+          ...propertyPatch,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } else {
+        await propRef.update({ updatedAt: FieldValue.serverTimestamp() });
+      }
+
+      return {
+        listingId,
+        furthestMajorIndex: prev.furthestMajorIndex ?? 0,
+        state: nextState,
+        propertyStatus: prop.status,
+      };
+    } catch (e) {
+      if (e && e.statusCode) throw e;
+      throw new AppError(e.message || 'Failed to update listing process', 500);
     }
   },
 

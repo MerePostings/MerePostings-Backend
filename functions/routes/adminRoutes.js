@@ -17,6 +17,7 @@ router.get('/transactions',             adminController.getTransactions);
 router.get('/listings',                 adminController.getListings);
 router.get('/listings/:listingId',      adminController.getListingById);
 router.patch('/listings/:listingId',              adminController.updateListing);
+router.patch('/listings/:listingId/listing-process', adminController.updateListingProcess);
 router.patch('/listings/:listingId/status',       adminController.updateListingStatus);
 router.patch('/listings/:listingId/tracking',     adminController.updateTrackingStep);
 router.post('/:listingId/media/:mediaType',         propertyController.uploadMedia);

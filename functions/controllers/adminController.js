@@ -39,6 +39,14 @@ const adminController = {
     res.status(200).json(result);
   }),
 
+  updateListingProcess: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.updateListingProcess(
+      req.params.listingId,
+      req.body?.state ?? req.body,
+    );
+    res.status(200).json(result);
+  }),
+
   updateListingStatus: asyncErrorHandler(async (req, res) => {
     const result = await adminService.updateListingStatus(req.params.listingId, req.body.status);
     res.status(200).json(result);
