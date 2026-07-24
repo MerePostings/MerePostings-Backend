@@ -5,6 +5,10 @@ const archiver = require('archiver');
 const axios = require('axios');
 const { PassThrough } = require('stream');
 const notificationService = require('./notificationService');
+const {
+  assembleProcessState,
+  buildProcessPropertyUpdate,
+} = require('../utils/listingProcessState');
 
 const STATUS_SEVERITY = { draft: 'info', pending: 'info', active: 'success', closed: 'info' };
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
@@ -292,13 +296,11 @@ const adminService = {
       if (!doc.exists) throw new AppError('Listing not found', 404);
 
       const d = doc.data();
-      const procSnap = await db.collection('listingProcesses').doc(listingId).get();
-      const listingProcess = procSnap.exists
-        ? {
-            state: procSnap.data().state || {},
-            furthestMajorIndex: procSnap.data().furthestMajorIndex ?? 0,
-          }
-        : null;
+      const state = assembleProcessState(d);
+      const listingProcess = {
+        state,
+        furthestMajorIndex: state.furthestMajorIndex ?? d.furthestMajorIndex ?? 0,
+      };
 
       return { id: doc.id, ...d, listingProcess };
     } catch (e) {
@@ -308,13 +310,10 @@ const adminService = {
 
   /**
    * Admin listing-process update: no owner check, no submitted lock.
-   * Merges FE process state and projects onto properties (same as seller).
+   * Writes flat process fields onto properties only (same merge as seller).
    */
   updateListingProcess: async (listingId, state) => {
     try {
-      const { FieldValue } = require('firebase-admin/firestore');
-      const { projectStateToProperty } = require('../utils/projectListingState');
-
       if (!listingId) throw new AppError('listingId is required', 400);
       if (state == null || typeof state !== 'object' || Array.isArray(state)) {
         throw new AppError('state object is required', 400);
@@ -325,46 +324,14 @@ const adminService = {
       if (!propSnap.exists) throw new AppError('Listing not found', 404);
 
       const prop = propSnap.data();
-      const procRef = db.collection('listingProcesses').doc(listingId);
-      const procSnap = await procRef.get();
-      const prev = procSnap.exists
-        ? procSnap.data()
-        : {
-            ownerId: prop.ownerId || null,
-            listingId,
-            furthestMajorIndex: 0,
-            state: {},
-          };
-
-      const nextState = { ...(prev.state || {}), ...state };
-
-      await procRef.set(
-        {
-          ownerId: prev.ownerId || prop.ownerId || null,
-          listingId,
-          furthestMajorIndex: prev.furthestMajorIndex ?? 0,
-          state: nextState,
-          updatedAt: FieldValue.serverTimestamp(),
-          ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-        },
-        { merge: true }
-      );
-
-      const propertyPatch = projectStateToProperty(nextState);
-      if (Object.keys(propertyPatch).length > 0) {
-        await propRef.update({
-          ...propertyPatch,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      } else {
-        await propRef.update({ updatedAt: FieldValue.serverTimestamp() });
-      }
+      const { nextState, nextStatus, update } = buildProcessPropertyUpdate(prop, state);
+      await propRef.update(update);
 
       return {
         listingId,
-        furthestMajorIndex: prev.furthestMajorIndex ?? 0,
+        furthestMajorIndex: nextState.furthestMajorIndex ?? 0,
         state: nextState,
-        propertyStatus: prop.status,
+        propertyStatus: nextStatus,
       };
     } catch (e) {
       if (e && e.statusCode) throw e;
