@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      # `npm run lint` is intentionally not run here yet: the existing codebase
+      # has thousands of pre-existing ESLint violations (mostly CRLF line
+      # endings) unrelated to this test suite, so gating CI on it today would
+      # make this workflow permanently fail for reasons this PR didn't cause.
+      # Re-add once that pre-existing debt gets cleaned up in its own pass.
+      - run: npm test

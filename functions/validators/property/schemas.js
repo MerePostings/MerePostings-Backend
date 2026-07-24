@@ -35,9 +35,8 @@ const selectedAddonsSchema = Joi.object({
 });
 
 const listingProcessPatchSchema = Joi.object({
-    furthestMajorIndex: Joi.number().integer().min(0).max(8).optional(),
-    state: Joi.object().unknown(true).optional(),
-}).or('furthestMajorIndex', 'state');
+    state: Joi.object().unknown(true).required(),
+});
 
 module.exports = {
     initiatePropertySchema,

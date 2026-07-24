@@ -5,9 +5,160 @@ const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
 const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
-const { projectStateToProperty } = require('../utils/projectListingState');
-const notificationService = require('./notificationService');
-const actionService = require('./actionService');
+const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
+
+function occupancyFromBe(occupancyType) {
+    if (occupancyType === 'owner_occupied') return 'owner';
+    if (occupancyType === 'tenant_occupied') return 'tenant';
+    if (occupancyType === 'vacant') return 'vacant';
+    return null;
+}
+
+/** Flat listing-process fields stored once on the property root (no flowState). */
+const PROCESS_FIELD_KEYS = [
+    'listedWithOtherBrokerage',
+    'supportTier',
+    'occupancy',
+    'propertyType',
+    'askingPrice',
+    'selectedAddons',
+    'walkthroughAnswers',
+    'sellerContact',
+    'ownership',
+    'mailingAddress',
+    'propertyDetails',
+    'featuresUpgrades',
+    'buyerCopy',
+    'sellerConfirmations',
+];
+
+/** Intermediate step-group keys to delete after migrating to flat. */
+const STEP_GROUP_KEYS = [
+    'getStarted',
+    'sellingStyle',
+    'basicDetail',
+    'tellBuyers',
+    'beforeLive',
+    'reviewListing',
+];
+
+function isStepGroupedState(state) {
+    if (!state || typeof state !== 'object') return false;
+    return STEP_GROUP_KEYS.some((k) => state[k] != null && typeof state[k] === 'object');
+}
+
+function isFlatProcessState(state) {
+    if (!state || typeof state !== 'object') return false;
+    // Flat if any process field is present and we're not in step-group shape
+    if (isStepGroupedState(state)) return false;
+    return PROCESS_FIELD_KEYS.some((k) => k in state);
+}
+
+/** Unwrap step-grouped wire → flat process fields. */
+function unwrapStepGroupsToFlat(grouped) {
+    if (!grouped || typeof grouped !== 'object') return {};
+    const out = {};
+    if (typeof grouped.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = grouped.furthestMajorIndex;
+    }
+    if (grouped.getStarted) {
+        out.listedWithOtherBrokerage = grouped.getStarted.listedWithOtherBrokerage ?? null;
+    }
+    if (grouped.sellingStyle) {
+        out.supportTier = grouped.sellingStyle.supportTier ?? null;
+        out.walkthroughAnswers = grouped.sellingStyle.walkthroughAnswers ?? {};
+    }
+    if (grouped.basicDetail) {
+        out.occupancy = grouped.basicDetail.occupancy ?? null;
+        out.sellerContact = grouped.basicDetail.sellerContact ?? {};
+        out.ownership = grouped.basicDetail.ownership ?? {};
+        out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
+    }
+    if (grouped.propertyDetails && typeof grouped.propertyDetails === 'object') {
+        const { propertyType, askingPrice, ...rest } = grouped.propertyDetails;
+        out.propertyDetails = rest;
+        if (propertyType !== undefined) out.propertyType = propertyType;
+        if (askingPrice !== undefined) out.askingPrice = askingPrice;
+    }
+    if (grouped.featuresUpgrades != null) out.featuresUpgrades = grouped.featuresUpgrades;
+    if (grouped.tellBuyers != null) out.buyerCopy = grouped.tellBuyers;
+    if (grouped.beforeLive?.selectedAddons != null) {
+        out.selectedAddons = grouped.beforeLive.selectedAddons;
+    }
+    if (grouped.reviewListing != null) out.sellerConfirmations = grouped.reviewListing;
+    return out;
+}
+
+/** Normalize incoming PATCH state (flat, step-grouped, or legacy flowState blob) → flat. */
+function normalizeIncomingState(state) {
+    if (!state || typeof state !== 'object') return {};
+    if (isStepGroupedState(state)) return unwrapStepGroupsToFlat(state);
+    // Already flat (or legacy flat flowState contents)
+    const out = {};
+    if (typeof state.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = state.furthestMajorIndex;
+    }
+    for (const k of PROCESS_FIELD_KEYS) {
+        if (k in state) out[k] = state[k];
+    }
+    return out;
+}
+
+/** Assemble listing-process `state` from property root (flat preferred). */
+function assembleProcessState(prop) {
+    if (isFlatProcessState(prop)) {
+        const state = {};
+        if (typeof prop.furthestMajorIndex === 'number') {
+            state.furthestMajorIndex = prop.furthestMajorIndex;
+        }
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in prop) state[k] = prop[k];
+        }
+        // Prefer root selectedAddons; fall back to brief beforeLive window
+        if (!Array.isArray(state.selectedAddons) && Array.isArray(prop.beforeLive?.selectedAddons)) {
+            state.selectedAddons = prop.beforeLive.selectedAddons;
+        }
+        return state;
+    }
+    if (isStepGroupedState(prop)) {
+        return unwrapStepGroupsToFlat(prop);
+    }
+    if (prop.flowState && typeof prop.flowState === 'object') {
+        return normalizeIncomingState(prop.flowState);
+    }
+    return {};
+}
+
+/** selectedAddons at root; fall back to beforeLive (step-group window). */
+function getSelectedAddons(prop) {
+    if (Array.isArray(prop?.selectedAddons)) return prop.selectedAddons;
+    if (Array.isArray(prop?.beforeLive?.selectedAddons)) return prop.beforeLive.selectedAddons;
+    return [];
+}
+
+function isPlainObject(value) {
+    return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Deep-merge plain objects for listing-process nested fields.
+ * Arrays / scalars / null replace. Used so sparse nested PATCHes keep siblings.
+ */
+function deepMergePlainObjects(prev, next) {
+    if (!isPlainObject(next)) return next;
+    if (!isPlainObject(prev)) return { ...next };
+    const out = { ...prev };
+    for (const key of Object.keys(next)) {
+        const n = next[key];
+        const p = prev[key];
+        if (isPlainObject(n) && isPlainObject(p)) {
+            out[key] = deepMergePlainObjects(p, n);
+        } else {
+            out[key] = n;
+        }
+    }
+    return out;
+}
 
 const buildAddressName = (location) => {
     try {
@@ -137,42 +288,27 @@ const propertyService = {
 
     /**
      * STAGE 1 — Initiation.
-     * Creates properties/{id} + listingProcesses/{id}. occupancyType optional.
+     * Creates properties/{id}. Optional occupancy seeds flat occupancy field.
      */
     initiateProperty: async (userId, body = {}) => {
         const { occupancyType } = body || {};
         try {
+            const occupancy = occupancyFromBe(occupancyType);
             const propertyData = {
                 ownerId: userId,
                 status: 'initiated',
                 paid: false,
+                furthestMajorIndex: 0,
                 createdAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             };
             if (occupancyType) propertyData.occupancyType = occupancyType;
+            if (occupancy) {
+                propertyData.occupancy = occupancy;
+            }
 
             const listingRef = await db.collection('properties').add(propertyData);
-            const listingId = listingRef.id;
-
-            await db.collection('listingProcesses').doc(listingId).set({
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: 0,
-                state: occupancyType
-                    ? {
-                        occupancy:
-                            occupancyType === 'owner_occupied'
-                                ? 'owner'
-                                : occupancyType === 'tenant_occupied'
-                                    ? 'tenant'
-                                    : 'vacant',
-                    }
-                    : {},
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-
-            return listingId;
+            return listingRef.id;
         } catch (e) {
             console.error("Error initiating property:", e);
             throw new AppError("Failed to initiate property", 500);
@@ -185,37 +321,15 @@ const propertyService = {
         const prop = propSnap.data();
         if (prop.ownerId !== userId) throw new AppError('Unauthorized access to this property', 403);
 
-        const procSnap = await db.collection('listingProcesses').doc(listingId).get();
-        if (!procSnap.exists) {
-            // Backfill empty process for older properties
-            const empty = {
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: 0,
-                state: {},
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            };
-            await db.collection('listingProcesses').doc(listingId).set(empty);
-            return {
-                listingId,
-                furthestMajorIndex: 0,
-                state: {},
-                propertyStatus: prop.status,
-            };
-        }
-
-        const data = procSnap.data();
         return {
             listingId,
-            furthestMajorIndex: data.furthestMajorIndex ?? 0,
-            state: data.state || {},
+            state: assembleProcessState(prop),
             propertyStatus: prop.status,
-            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+            updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
         };
     },
 
-    saveListingProcess: async (userId, listingId, { furthestMajorIndex, state }) => {
+    saveListingProcess: async (userId, listingId, { state }) => {
         const propRef = db.collection('properties').doc(listingId);
         const propSnap = await propRef.get();
         if (!propSnap.exists) throw new AppError('Property not found', 404);
@@ -225,59 +339,51 @@ const propertyService = {
             throw new AppError('Cannot edit a listing that has already been submitted', 409);
         }
 
-        const procRef = db.collection('listingProcesses').doc(listingId);
-        const procSnap = await procRef.get();
-        const prev = procSnap.exists ? procSnap.data() : {
-            ownerId: userId,
-            listingId,
-            furthestMajorIndex: 0,
-            state: {},
-        };
+        const incoming = state != null ? normalizeIncomingState(state) : {};
+        const prev = assembleProcessState(prop);
 
-        const nextState =
-            state != null
-                ? { ...(prev.state || {}), ...state }
-                : prev.state || {};
-        const nextIndex =
-            typeof furthestMajorIndex === 'number'
-                ? Math.max(prev.furthestMajorIndex ?? 0, furthestMajorIndex)
-                : prev.furthestMajorIndex ?? 0;
-
-        await procRef.set(
-            {
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: nextIndex,
-                state: nextState,
-                updatedAt: FieldValue.serverTimestamp(),
-                ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-            },
-            { merge: true }
-        );
-
-        const propertyPatch = projectStateToProperty(nextState);
-        const hasPatch = Object.keys(propertyPatch).length > 0;
-        if (hasPatch || Object.keys(nextState).length > 0) {
-            await propRef.update({
-                ...propertyPatch,
-                status: prop.status === 'initiated' ? 'draft' : prop.status,
-                updatedAt: FieldValue.serverTimestamp(),
-            });
+        const nextState = { ...prev };
+        if (typeof incoming.furthestMajorIndex === 'number') {
+            nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
         }
+        // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in incoming) {
+                nextState[k] = deepMergePlainObjects(prev[k], incoming[k]);
+            }
+        }
+
+        const nextStatus = prop.status === 'initiated' ? 'draft' : prop.status;
+        const update = {
+            status: nextStatus,
+            updatedAt: FieldValue.serverTimestamp(),
+            flowState: FieldValue.delete(),
+        };
+        // Clear intermediate step-group keys
+        for (const k of STEP_GROUP_KEYS) {
+            update[k] = FieldValue.delete();
+        }
+
+        if (typeof nextState.furthestMajorIndex === 'number') {
+            update.furthestMajorIndex = nextState.furthestMajorIndex;
+        }
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in nextState) update[k] = nextState[k];
+        }
+
+        await propRef.update(update);
 
         return {
             listingId,
-            furthestMajorIndex: nextIndex,
             state: nextState,
-            propertyStatus: hasPatch && prop.status === 'initiated' ? 'draft' : prop.status,
+            propertyStatus: nextStatus,
         };
     },
 
     getOwnerMostRecentProcess: async (userId) => {
         try {
-            // Avoid composite index: filter by owner, sort in memory
             const snapshot = await db
-                .collection('listingProcesses')
+                .collection('properties')
                 .where('ownerId', '==', userId)
                 .get();
 
@@ -294,16 +400,12 @@ const propertyService = {
                 .sort((a, b) => b.updatedAt - a.updatedAt);
 
             for (const { id, data } of docs) {
-                const propSnap = await db.collection('properties').doc(id).get();
-                if (!propSnap.exists) continue;
-                const status = propSnap.data().status;
-                if (status === 'submitted' || status === 'active' || status === 'closed') continue;
+                if (!EDITABLE_STATUSES.has(data.status)) continue;
                 return {
                     process: {
                         listingId: id,
-                        furthestMajorIndex: data.furthestMajorIndex ?? 0,
-                        state: data.state || {},
-                        propertyStatus: status,
+                        state: assembleProcessState(data),
+                        propertyStatus: data.status,
                         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
                     },
                 };
@@ -370,41 +472,12 @@ const propertyService = {
      */
     markSubmitted: async (listingId) => {
         try {
-            const docRef = db.collection('properties').doc(listingId);
-            await docRef.update({
+            await db.collection('properties').doc(listingId).update({
                 status: 'submitted',
                 paid: true,
                 submittedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
-
-            let data;
-            try {
-                const snap = await docRef.get();
-                data = snap.data();
-                if (data?.ownerId) {
-                    await notificationService.createNotification({
-                        userId: data.ownerId,
-                        type: 'status_change',
-                        severity: 'success',
-                        title: 'Listing submitted',
-                        message: 'Your listing has been submitted and is now being reviewed.',
-                        listingId,
-                        listingAddress: buildAddressName(data.location || {}),
-                        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
-                        actionLabel: 'View Listing',
-                        sendEmail: false,
-                    });
-                }
-            } catch (notifyErr) {
-                console.error('[notif] Failed to notify owner of listing submission:', notifyErr);
-            }
-
-            try {
-                await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
-            } catch (actionErr) {
-                console.error('[actions] Failed to generate actions for listing:', actionErr);
-            }
         } catch (e) {
             console.error("Error marking property submitted:", e);
         }
@@ -456,11 +529,6 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
-            try {
-                await actionService.completeUploadAction(listingId, mediaType);
-            } catch (actionErr) {
-                console.error('[actions] Failed to auto-complete upload action:', actionErr);
-            }
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
@@ -605,41 +673,43 @@ const propertyService = {
 
     getOwnerMostRecentProperty: async (uid) => {
         try {
-            const STATUSES = ["active", "draft", "closed", "pending"];
+            const snapshot = await db
+                .collection("properties")
+                .where("ownerId", "==", uid)
+                .orderBy("updatedAt", "desc")
+                .get();
 
-            const [topSnapshot, ...countSnapshots] = await Promise.all([
-                db.collection("properties")
-                    .where("ownerId", "==", uid)
-                    .orderBy("updatedAt", "desc")
-                    .limit(1)
-                    .get(),
-                ...STATUSES.map((status) =>
-                    db.collection("properties")
-                        .where("ownerId", "==", uid)
-                        .where("status", "==", status)
-                        .count()
-                        .get()
-                ),
-            ]);
-
-            const stats = STATUSES.reduce((acc, status, i) => {
-                acc[status] = countSnapshots[i].data().count;
-                return acc;
-            }, { active: 0, draft: 0, closed: 0, pending: 0 });
-
-            if (topSnapshot.empty) {
-                return { property: null, stats };
+            if (snapshot.empty) {
+                return {
+                    property: null,
+                    stats: { active: 0, draft: 0, closed: 0, pending: 0 },
+                };
             }
 
-            const doc = topSnapshot.docs[0];
-            const data = doc.data();
-            const property = {
-                id: doc.id,
-                ...data,
-                updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-            };
+            const properties = snapshot.docs.map((doc) => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+                };
+            });
 
-            return { property, stats };
+            const stats = properties.reduce(
+                (acc, property) => {
+                    const status = property.status;
+                    if (acc[status] !== undefined) {
+                        acc[status] += 1;
+                    }
+                    return acc;
+                },
+                { active: 0, draft: 0, closed: 0, pending: 0 }
+            );
+
+            return {
+                property: properties[0], // most recent, since ordered by updatedAt desc
+                stats,
+            };
         } catch (e) {
             console.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
@@ -656,7 +726,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -683,7 +753,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -716,7 +786,7 @@ const propertyService = {
             }
 
             const completedSteps = data.progressTracker?.completedSteps ?? {};
-            const selectedAddons = data.selectedAddons ?? [];
+            const selectedAddons = getSelectedAddons(data);
 
             const dynamicSteps = selectedAddons
                 .map((addonId) => ADDONS_BY_ID[addonId])
@@ -784,6 +854,7 @@ const propertyService = {
         try {
             await docRef.update({
                 selectedAddons,
+                beforeLive: FieldValue.delete(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
