@@ -4,7 +4,7 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const {
-    listActionsQuerySchema, schedulingPreferenceSchema,
+    listActionsQuerySchema, schedulingBatchSchema,
 } = require("../validators/action/schemas.js");
 
 router.get(
@@ -23,14 +23,8 @@ router.get(
 router.patch(
     "/:id/schedule-request",
     verifyFirebaseToken,
-    validate(schedulingPreferenceSchema),
-    actionController.submitSchedulingPreference
-);
-
-router.patch(
-    "/:id/confirm-time",
-    verifyFirebaseToken,
-    actionController.confirmScheduledTime
+    validate(schedulingBatchSchema),
+    actionController.submitSchedulingBatch
 );
 
 router.get(

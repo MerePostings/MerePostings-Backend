@@ -16,13 +16,8 @@ const actionController = {
         res.status(200).json({ action });
     }),
 
-    submitSchedulingPreference: asyncErrorHandler(async (req, res) => {
-        const action = await actionService.submitSchedulingPreference(req.user.uid, req.params.id, req.body);
-        res.status(200).json({ action });
-    }),
-
-    confirmScheduledTime: asyncErrorHandler(async (req, res) => {
-        const action = await actionService.confirmScheduledTime(req.user.uid, req.params.id);
+    submitSchedulingBatch: asyncErrorHandler(async (req, res) => {
+        const action = await actionService.submitSchedulingBatch(req.user.uid, req.params.id, req.body);
         res.status(200).json({ action });
     }),
 

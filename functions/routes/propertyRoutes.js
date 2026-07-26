@@ -104,6 +104,12 @@ router.delete(
     propertyController.removeMedia
 );
 
+router.patch(
+    "/:listingId/virtual-tour-link",
+    verifyFirebaseToken,
+    propertyController.setVirtualTourLink
+);
+
 router.get(
     "/listing-process/:listingId",
     verifyFirebaseToken,

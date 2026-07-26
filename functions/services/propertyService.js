@@ -6,7 +6,34 @@ const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
 const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
+const actionService = require('./actionService')
 const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
+
+const MEDIA_LIMITS = {
+    photos: {
+        mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+        maxBytes: 15 * 1024 * 1024,
+        maxFiles: 50,
+    },
+    attachments: {
+        mimeTypes: [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/jpeg',
+            'image/png',
+        ],
+        maxBytes: 20 * 1024 * 1024,
+        maxFiles: 15,
+    },
+};
+
+/** Throws 404/403 unless `uid` owns `listingId`. Skip entirely for admin-initiated calls. */
+async function assertListingOwnership(listingId, uid) {
+    const snap = await db.collection('properties').doc(listingId).get();
+    if (!snap.exists) throw new AppError('Property not found', 404);
+    if (snap.data().ownerId !== uid) throw new AppError('Unauthorized access to this property', 403);
+}
 
 function occupancyFromBe(occupancyType) {
     if (occupancyType === 'owner_occupied') return 'owner';
@@ -533,17 +560,36 @@ const propertyService = {
     /**
      * Uploads photos or attachments to Firebase Storage for a given listing
      * - Validates mediaType is either 'photos' or 'attachments'
+     * - Verifies the requester owns the listing (skipped for admin calls)
+     * - Validates each file's mime type and size against MEDIA_LIMITS
      * - Uploads each file to Storage under listingId/mediaType/
      * - Generates a long-lived signed URL for each file
      * - Appends uploaded file metadata to the listing's media array in Firestore
      */
-    uploadMedia: async (listingId, files, mediaType) => {
+    uploadMedia: async (listingId, files, mediaType, { uid, isAdmin, category } = {}) => {
 
         if (!['photos', 'attachments'].includes(mediaType)) {
             throw new AppError("Invalid media type", 400);
         }
         if (!files || files.length === 0) {
             throw new AppError("No files received", 400);
+        }
+
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
+        }
+
+        const limits = MEDIA_LIMITS[mediaType];
+        if (files.length > limits.maxFiles) {
+            throw new AppError(`You can upload at most ${limits.maxFiles} files at a time`, 400);
+        }
+        for (const file of files) {
+            if (!limits.mimeTypes.includes(file.mimetype)) {
+                throw new AppError(`"${file.originalname}" is not an accepted file type for ${mediaType}`, 400);
+            }
+            if (file.buffer.length > limits.maxBytes) {
+                throw new AppError(`"${file.originalname}" is too large (max ${limits.maxBytes / (1024 * 1024)}MB)`, 400);
+            }
         }
 
         const mediaUrls = [];
@@ -568,6 +614,7 @@ const propertyService = {
                     url,
                     fileName: file.originalname,
                     uploadedAt: new Date(),
+                    category: mediaType === 'attachments' ? (category ?? null) : null,
                 });
             }
 
@@ -589,9 +636,13 @@ const propertyService = {
         return mediaUrls;
     },
 
-    removeMedia: async (listingId, mediaType, mediaUrl) => {
+    removeMedia: async (listingId, mediaType, mediaUrl, { uid, isAdmin } = {}) => {
         if (!['photos', 'attachments'].includes(mediaType)) {
             throw new AppError("Invalid media type", 400);
+        }
+
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
         }
 
         const docRef = db.collection('properties').doc(listingId);
@@ -685,16 +736,20 @@ const propertyService = {
         }
     },
 
-    reorderMedia: async (listingId, mediaType, urls) => {
+    reorderMedia: async (listingId, mediaType, urls, { uid, isAdmin } = {}) => {
         try{
             if (!['photos', 'attachments'].includes(mediaType)) {
                 throw new AppError('Invalid media type', 400);
             }
-            
+
             if (!Array.isArray(urls) || urls.length === 0) {
                 throw new AppError('urls must be a non-empty array', 400);
             }
-        
+
+            if (!isAdmin) {
+                await assertListingOwnership(listingId, uid);
+            }
+
             const docRef = db.collection('properties').doc(listingId);
             const snap   = await docRef.get();
         
@@ -719,8 +774,26 @@ const propertyService = {
         
             return finalMedia;
         }catch(e){
+            if (e instanceof AppError) throw e;
             throw new AppError(e.message || "Failed to reorder media", 500);
         }
+    },
+
+    setVirtualTourLink: async (listingId, url, { uid, isAdmin } = {}) => {
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
+        }
+
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+        if (!snap.exists) throw new AppError('Property not found', 404);
+
+        await docRef.update({
+            'media.virtualTourLink': url || null,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        return url || null;
     },
 
     getOwnerMostRecentProperty: async (uid) => {

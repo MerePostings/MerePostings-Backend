@@ -75,8 +75,18 @@ const adminController = {
     res.status(200).json({ actions });
   }),
 
-  proposeActionTime: asyncErrorHandler(async (req, res) => {
-    const action = await actionService.adminProposeTime(req.params.actionId, req.body);
+  listConfirmedAppointments: asyncErrorHandler(async (req, res) => {
+    const actions = await actionService.adminListConfirmedAppointments();
+    res.status(200).json({ actions });
+  }),
+
+  counterActionTime: asyncErrorHandler(async (req, res) => {
+    const action = await actionService.adminCounterTime(req.params.actionId, req.body);
+    res.status(200).json({ action });
+  }),
+
+  finalizeActionTime: asyncErrorHandler(async (req, res) => {
+    const action = await actionService.adminFinalizeTime(req.params.actionId, req.body);
     res.status(200).json({ action });
   }),
 
