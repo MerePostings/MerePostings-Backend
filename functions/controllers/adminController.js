@@ -1,6 +1,7 @@
 const logger = require("firebase-functions/logger");
 const adminService = require("../services/adminService");
 const actionService = require("../services/actionService");
+const propertyService = require("../services/propertyService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
 
 const adminController = {  
@@ -45,10 +46,21 @@ const adminController = {
     res.status(200).json(result);
   }),
 
-  updateTrackingStep: asyncErrorHandler(async (req, res) => {
+  getProgressTracker: asyncErrorHandler(async (req, res) => {
+    const { listingId } = req.params;
+    const result = await propertyService.getProgressTracker(null, listingId);
+    res.status(200).json(result);
+  }),
+
+  updateProgressStep: asyncErrorHandler(async (req, res) => {
     const { listingId } = req.params;
     const { stepId, completed } = req.body;
-    const result = await adminService.updateTrackingStep(listingId, stepId, completed);
+    if (completed) {
+      await propertyService.markStepCompleted(listingId, stepId);
+    } else {
+      await propertyService.markStepIncomplete(listingId, stepId);
+    }
+    const result = await propertyService.getProgressTracker(null, listingId);
     res.status(200).json(result);
   }),
 

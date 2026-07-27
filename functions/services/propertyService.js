@@ -4,7 +4,6 @@ const { getStepsForListing } = require("../data/progressTrackerSteps")
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
-const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
 const actionService = require('./actionService')
 const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
@@ -895,6 +894,11 @@ const propertyService = {
         }
     },
 
+    /**
+     * uid is the caller's own uid for the seller-facing route (ownership
+     * enforced); pass null for the admin route, which is already gated by
+     * verifyAdminFirebaseToken and needs to read any listing.
+     */
     getProgressTracker: async (uid, listingId) => {
         try {
             const docRef = db.collection('properties').doc(listingId);
@@ -906,19 +910,14 @@ const propertyService = {
 
             const data = docSnap.data();
 
-            if (data.ownerId !== uid) {
+            if (uid && data.ownerId !== uid) {
                 throw new AppError("Unauthorized access to this property", 403);
             }
 
             const completedSteps = data.progressTracker?.completedSteps ?? {};
             const selectedAddons = getSelectedAddons(data);
 
-            const dynamicSteps = selectedAddons
-                .map((addonId) => ADDONS_BY_ID[addonId])
-                .filter(Boolean)
-                .map((addon) => ({ id: addon.id, label: addon.label }));
-
-            const steps = [...STATIC_STEPS, ...dynamicSteps].map((step) => {
+            const steps = getStepsForListing(selectedAddons).map((step) => {
                 const completedAt = completedSteps[step.id];
                 return {
                     id: step.id,

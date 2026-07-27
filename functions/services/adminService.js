@@ -382,19 +382,6 @@ const adminService = {
     }
   },
 
-  updateTrackingStep: async (listingId, stepId, completed) => {
-    try {
-      const { FieldValue } = require('firebase-admin/firestore');
-      await db.collection('properties').doc(listingId).update({
-        [`tracking.${stepId}`]: completed,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return { success: true };
-    } catch (e) {
-      throw new AppError(e.message || 'Failed to update tracking step', 500);
-    }
-  },
-
   downloadPropertyAsZip: async (listingId) => {
     try {
       const docRef = db.collection("properties").doc(listingId);

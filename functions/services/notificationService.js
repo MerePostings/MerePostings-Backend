@@ -305,7 +305,7 @@ const notificationService = {
      * `patch` is a partial { type: boolean } map. Written via dot-path
      * keys through .update() (not .set(..., {merge:true}), which does NOT
      * interpret dotted string keys as nested paths) — same pattern as
-     * propertyService.saveDraftField / adminService.updateTrackingStep.
+     * propertyService.saveDraftField / markStepCompleted.
      */
     updatePreferences: async (userId, patch) => {
         const invalidKeys = Object.keys(patch).filter((key) => !NOTIFICATION_TYPES.includes(key));

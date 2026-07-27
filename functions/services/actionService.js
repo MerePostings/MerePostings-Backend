@@ -67,16 +67,6 @@ const buildSchedulingHistory = (previousSchedulingRequest) => {
     ];
 };
 
-const cascadeCompleteStep = async (listingId, progressStepId) => {
-    if (!progressStepId) return;
-    try {
-        const propertyService = require('./propertyService');
-        await propertyService.markStepCompleted(listingId, progressStepId);
-    } catch (stepErr) {
-        logger.error('[actions] Failed to cascade-complete progress step:', stepErr);
-    }
-};
-
 const actionService = {
 
     // exposed so dashboardService can shape actions fetched by id (via db.getAll)
@@ -444,7 +434,10 @@ const actionService = {
             return actionData;
         });
 
-        await cascadeCompleteStep(data.listingId, data.progressStepId);
+        // Confirming an appointment no longer auto-completes the matching
+        // progress-tracker step -- only an explicit admin action on the
+        // Progress Tracker panel (propertyService.markStepCompleted via the
+        // admin progress-tracker endpoint) marks a step done.
 
         try {
             await notificationService.createNotification({
@@ -482,7 +475,6 @@ const actionService = {
                 completedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
-            await cascadeCompleteStep(data.listingId, data.progressStepId);
         }
 
         const updated = await docRef.get();
