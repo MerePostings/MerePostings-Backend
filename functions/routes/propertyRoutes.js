@@ -5,115 +5,115 @@ const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const validateDraftField = require("../middlewares/validateDraftField");
 const {
-    initiatePropertySchema, selectedAddonsSchema,
-    listingProcessPatchSchema,
+  initiatePropertySchema, selectedAddonsSchema,
+  listingProcessPatchSchema,
 } = require("../validators/property/schemas.js");
 
 router.get(
     "/get-addon-registry",
     verifyFirebaseToken,
-    propertyController.getAddons
+    propertyController.getAddons,
 );
 
 router.get(
     "/get-owner-properties",
     verifyFirebaseToken,
-    propertyController.getOwnerProperties
+    propertyController.getOwnerProperties,
 );
 
 router.get(
     "/get-owner-most-recent-property",
     verifyFirebaseToken,
-    propertyController.getOwnerMostRecentProperty
+    propertyController.getOwnerMostRecentProperty,
 );
 
 router.get(
     "/get-owner-most-recent-process",
     verifyFirebaseToken,
-    propertyController.getOwnerMostRecentProcess
+    propertyController.getOwnerMostRecentProcess,
 );
 
 router.get(
     "/listings/:id",
     verifyFirebaseToken,
-    propertyController.getListing
+    propertyController.getListing,
 );
 
 router.post(
     "/initiate",
     verifyFirebaseToken,
     validate(initiatePropertySchema),
-    propertyController.initiateProperty
+    propertyController.initiateProperty,
 );
 
 router.get(
     "/:listingId/listing-process",
     verifyFirebaseToken,
-    propertyController.getListingProcess
+    propertyController.getListingProcess,
 );
 
 router.patch(
     "/:listingId/listing-process",
     verifyFirebaseToken,
     validate(listingProcessPatchSchema),
-    propertyController.saveListingProcess
+    propertyController.saveListingProcess,
 );
 
 router.patch(
     "/:listingId/draft-field",
     verifyFirebaseToken,
     validateDraftField,
-    propertyController.saveDraftField
+    propertyController.saveDraftField,
 );
 
 router.post(
     "/create-client-secret/:listingId",
     verifyFirebaseToken,
     validate(selectedAddonsSchema),
-    propertyController.stripeCheckoutSessionForCreateListing
+    propertyController.stripeCheckoutSessionForCreateListing,
 );
 
 router.post(
     "/request-refund/:listingId",
     verifyFirebaseToken,
-    propertyController.requestRefund
+    propertyController.requestRefund,
 );
 
 // LEGACY — kept for backward compatibility, see propertyController.addProperty
 router.post(
     "/add-property",
     verifyFirebaseToken,
-    propertyController.addProperty
+    propertyController.addProperty,
 );
 
 router.post(
     "/:listingId/media/:mediaType",
     verifyFirebaseToken,
-    propertyController.uploadMedia
+    propertyController.uploadMedia,
 );
 
 router.patch(
     "/:listingId/media/:mediaType/reorder",
     verifyFirebaseToken,
-    propertyController.reorderMedia
+    propertyController.reorderMedia,
 );
 
 router.delete(
     "/:listingId/media/:mediaType",
     verifyFirebaseToken,
-    propertyController.removeMedia
+    propertyController.removeMedia,
 );
 
 router.patch(
     "/:listingId/virtual-tour-link",
     verifyFirebaseToken,
-    propertyController.setVirtualTourLink
+    propertyController.setVirtualTourLink,
 );
 
 router.get(
     "/listing-process/:listingId",
     verifyFirebaseToken,
-    propertyController.getProgressTracker
+    propertyController.getProgressTracker,
 );
 
 module.exports = router;

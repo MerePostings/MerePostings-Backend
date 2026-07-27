@@ -1,40 +1,41 @@
 const logger = require("firebase-functions/logger");
 const firebaseAdmin = require("../config/firebaseAdmin");
-const { db } = require("../config/db");
+const {db} = require("../config/db");
 const AppError = require("../utils/AppError");
-const { sendVerificationEmail } = require('./mailService')
-const { createContactIfNotExists } = require("../config/hubspotSDK")
-const { FieldValue } = require('firebase-admin/firestore');
+const {sendVerificationEmail} = require("./mailService");
+const {createContactIfNotExists} = require("../config/hubspotSDK");
+const {FieldValue} = require("firebase-admin/firestore");
 
 const authService = {
 
-  signUp : async (
-    { 
-      firstName,
-      lastName,
-      email,
-      password,
-      termsAccepted,
-      marketingOptIn
-    }) => {
-
-    try{
-    
+  signUp: async (
+      {
+        firstName,
+        lastName,
+        email,
+        password,
+        termsAccepted,
+        marketingOptIn,
+      }) => {
+    try {
       if (!firstName || !lastName || !email || !password) {
-          throw new AppError("Please fill in all of the required fields.", 400);
+        throw new AppError("Please fill in all of the required fields.", 400);
       }
-  
+
       const issues = [];
-      const SPECIAL = /[!@#$%^&*()_+\-=\[\]{}|;:",./<>?]/;
+      const SPECIAL = /[!@#$%^&*()_+\-=[\]{}|;:",./<>?]/;
 
       if (password.length < 8) issues.push(`≥${8} chars`);
-      if (!/[A-Z]/.test(password))
+      if (!/[A-Z]/.test(password)) {
         issues.push("add minimum of one uppercase letter");
-      if (!/[a-z]/.test(password))
+      }
+      if (!/[a-z]/.test(password)) {
         issues.push("add minimum of one lowercase letter");
+      }
       if (!/\d/.test(password)) issues.push("add minimum of one number");
-      if (!SPECIAL.test(password))
+      if (!SPECIAL.test(password)) {
         issues.push("add minimum of one special character");
+      }
 
       if (issues.length !== 0) throw new AppError(issues[0], 400);
 
@@ -53,11 +54,11 @@ const authService = {
       }
 
       const userRecord = await firebaseAdmin.auth().createUser({
-          email,
-          displayName: `${firstName} ${lastName}`,
-          emailVerified: false,
-          password,
-          disabled: false,
+        email,
+        displayName: `${firstName} ${lastName}`,
+        emailVerified: false,
+        password,
+        disabled: false,
       });
 
       const usersCollectionRef = db.collection("users").doc(userRecord.uid);
@@ -76,24 +77,23 @@ const authService = {
         }),
       });
 
-      createContactIfNotExists({email:email,firstname:firstName,lastname:lastName,platform_affiliation:"Mere Postings"});
-      
+      createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});
+
       const actionCodeSettings = {
         url: process.env.FRONTEND_URL,
         handleCodeInApp: true,
       };
-      
+
       const emailVerificationLink = await firebaseAdmin
-      .auth()
-      .generateEmailVerificationLink(email, actionCodeSettings);
+          .auth()
+          .generateEmailVerificationLink(email, actionCodeSettings);
 
       await sendVerificationEmail(email, emailVerificationLink, firstName);
-      
-    }catch (err) {
-      logger.error(err)
-      try{
+    } catch (err) {
+      logger.error(err);
+      try {
         if (err instanceof AppError) {
-          throw new AppError(err.message, err.statusCode)
+          throw new AppError(err.message, err.statusCode);
         } else if (err.code === "auth/email-already-exists") {
           throw new AppError("The email address is already in use by another account.", 400);
         } else if (err.code === "auth/invalid-phone-number") {
@@ -105,13 +105,13 @@ const authService = {
         } else {
           throw new AppError("An error occurred while signing up the user.", 500);
         }
-      }catch(err){
-        throw new AppError(err.message, err.statusCode)
+      } catch (err) {
+        throw new AppError(err.message, err.statusCode);
       }
     }
   },
 
-}
+};
 
 
-module.exports = authService
+module.exports = authService;

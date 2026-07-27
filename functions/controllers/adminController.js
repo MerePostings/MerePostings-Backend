@@ -4,14 +4,14 @@ const actionService = require("../services/actionService");
 const propertyService = require("../services/propertyService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
 
-const adminController = {  
+const adminController = {
   handleAdminLogin: asyncErrorHandler( async (req, res) => {
     const result = await adminService.handleAdminLogin(req.body.email);
     res.status(200).json(result);
   }),
 
   getDashboardStats: asyncErrorHandler(async (req, res) => {
-    const range = req.query.range || 'This Year';
+    const range = req.query.range || "This Year";
     const result = await adminService.getDashboardStats(range);
     res.status(200).json(result);
   }),
@@ -47,14 +47,14 @@ const adminController = {
   }),
 
   getProgressTracker: asyncErrorHandler(async (req, res) => {
-    const { listingId } = req.params;
+    const {listingId} = req.params;
     const result = await propertyService.getProgressTracker(null, listingId);
     res.status(200).json(result);
   }),
 
   updateProgressStep: asyncErrorHandler(async (req, res) => {
-    const { listingId } = req.params;
-    const { stepId, completed } = req.body;
+    const {listingId} = req.params;
+    const {stepId, completed} = req.body;
     if (completed) {
       await propertyService.markStepCompleted(listingId, stepId);
     } else {
@@ -65,48 +65,48 @@ const adminController = {
   }),
 
   downloadPropertyZip: asyncErrorHandler(async (req, res) => {
-    const { listingId } = req.params;
-    const { folderName, zipStream } = await adminService.downloadPropertyAsZip(listingId);
+    const {listingId} = req.params;
+    const {folderName, zipStream} = await adminService.downloadPropertyAsZip(listingId);
 
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${folderName}.zip"`);
-    res.setHeader('X-Zip-Filename', `${folderName}.zip`);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${folderName}.zip"`);
+    res.setHeader("X-Zip-Filename", `${folderName}.zip`);
 
     zipStream.pipe(res);
 
-    zipStream.on('error', (err) => {
-      logger.error('Zip stream error:', err);
+    zipStream.on("error", (err) => {
+      logger.error("Zip stream error:", err);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to download property zip' });
+        res.status(500).json({error: "Failed to download property zip"});
       }
     });
   }),
 
   listActionSchedulingQueue: asyncErrorHandler(async (req, res) => {
     const actions = await actionService.adminListSchedulingQueue();
-    res.status(200).json({ actions });
+    res.status(200).json({actions});
   }),
 
   listConfirmedAppointments: asyncErrorHandler(async (req, res) => {
     const actions = await actionService.adminListConfirmedAppointments();
-    res.status(200).json({ actions });
+    res.status(200).json({actions});
   }),
 
   counterActionTime: asyncErrorHandler(async (req, res) => {
     const action = await actionService.adminCounterTime(req.params.actionId, req.body);
-    res.status(200).json({ action });
+    res.status(200).json({action});
   }),
 
   finalizeActionTime: asyncErrorHandler(async (req, res) => {
     const action = await actionService.adminFinalizeTime(req.params.actionId, req.body);
-    res.status(200).json({ action });
+    res.status(200).json({action});
   }),
 
   completeAction: asyncErrorHandler(async (req, res) => {
     const action = await actionService.adminCompleteAction(req.params.actionId);
-    res.status(200).json({ action });
+    res.status(200).json({action});
   }),
 
-}
+};
 
 module.exports = adminController;

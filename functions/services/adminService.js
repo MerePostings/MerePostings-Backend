@@ -1,18 +1,18 @@
 require("dotenv").config();
 const logger = require("firebase-functions/logger");
-const { db } = require("../config/db");
+const {db} = require("../config/db");
 const AppError = require("../utils/AppError");
-const archiver = require('archiver');
-const axios = require('axios');
-const { PassThrough } = require('stream');
-const notificationService = require('./notificationService');
+const archiver = require("archiver");
+const axios = require("axios");
+const {PassThrough} = require("stream");
+const notificationService = require("./notificationService");
 
-const STATUS_SEVERITY = { draft: 'info', pending: 'info', active: 'success', closed: 'info' };
+const STATUS_SEVERITY = {draft: "info", pending: "info", active: "success", closed: "info"};
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
 
 const adminService = {
   handleAdminLogin: async (email) => {
-    try{
+    try {
       if (!email || typeof email !== "string" || email.trim() === "") {
         return false;
       }
@@ -20,10 +20,10 @@ const adminService = {
       const trimmedEmail = email.trim().toLowerCase();
 
       const snapshot = await db
-        .collection("users")
-        .where("email", "==", trimmedEmail)
-        .limit(1)
-        .get();
+          .collection("users")
+          .where("email", "==", trimmedEmail)
+          .limit(1)
+          .get();
 
       if (snapshot.empty) {
         return false;
@@ -35,8 +35,8 @@ const adminService = {
       const isAdmin = userData.ifAdmin === true;
 
       return isAdmin;
-    }catch(e){
-      throw new AppError(e.message || 'Failed to Login', e.statusCode || 500);
+    } catch (e) {
+      throw new AppError(e.message || "Failed to Login", e.statusCode || 500);
     }
   },
 
@@ -45,114 +45,114 @@ const adminService = {
       const now = new Date();
       let startDate;
 
-      if (range === 'Today') {
+      if (range === "Today") {
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      } else if (range === 'This Week') {
+      } else if (range === "This Week") {
         const day = now.getDay();
         startDate = new Date(now);
         startDate.setDate(now.getDate() - day);
         startDate.setHours(0, 0, 0, 0);
-      } else if (range === 'This Month') {
+      } else if (range === "This Month") {
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       } else {
         startDate = new Date(now.getFullYear(), 0, 1);
       }
 
-      const { Timestamp } = require('firebase-admin/firestore');
+      const {Timestamp} = require("firebase-admin/firestore");
       const start = Timestamp.fromDate(startDate);
 
       const [usersSnap, propertiesSnap, transactionsSnap] = await Promise.all([
-        db.collection('users').where('createdAt', '>=', start).get(),
-        db.collection('properties').get(),
-        db.collection('transactions').where('createdAt', '>=', start).get(),
+        db.collection("users").where("createdAt", ">=", start).get(),
+        db.collection("properties").get(),
+        db.collection("transactions").where("createdAt", ">=", start).get(),
       ]);
 
       const totalUsers = usersSnap.size;
 
       const totalRevenue = transactionsSnap.docs.reduce((sum, doc) => {
         const d = doc.data();
-        return d.status === 'processed' ? sum + (d.amount || 0) : sum;
+        return d.status === "processed" ? sum + (d.amount || 0) : sum;
       }, 0);
 
-      const totalProperties = propertiesSnap.docs.filter(doc => {
+      const totalProperties = propertiesSnap.docs.filter((doc) => {
         const d = doc.data();
         const createdAt = d.updatedAt;
         return createdAt && createdAt.toDate() >= startDate;
       }).length;
 
       const monthlyListings = {};
-      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const key = `${d.getFullYear()}-${d.getMonth()}`;
-        monthlyListings[key] = { 
-          label: monthNames[d.getMonth()], 
-          residential: 0, 
-          commercial: 0, 
-          other: 0 
+        monthlyListings[key] = {
+          label: monthNames[d.getMonth()],
+          residential: 0,
+          commercial: 0,
+          other: 0,
         };
       }
 
-      propertiesSnap.docs.forEach(doc => {
+      propertiesSnap.docs.forEach((doc) => {
         const d = doc.data();
         const date = d.updatedAt?.toDate();
         if (!date) return;
         const key = `${date.getFullYear()}-${date.getMonth()}`;
         if (!monthlyListings[key]) return;
         const type = d.propertyType?.toLowerCase();
-        if (type === 'residential') monthlyListings[key].residential++;
-        else if (type === 'commercial') monthlyListings[key].commercial++;
+        if (type === "residential") monthlyListings[key].residential++;
+        else if (type === "commercial") monthlyListings[key].commercial++;
         else monthlyListings[key].other++;
       });
 
-      const statusCounts = { pending: 0, active: 0, draft: 0, finished: 0 };
-      propertiesSnap.docs.forEach(doc => {
+      const statusCounts = {pending: 0, active: 0, draft: 0, finished: 0};
+      propertiesSnap.docs.forEach((doc) => {
         const status = doc.data().status;
         if (statusCounts[status] !== undefined) statusCounts[status]++;
-        else statusCounts['other'] = (statusCounts['other'] || 0) + 1;
+        else statusCounts["other"] = (statusCounts["other"] || 0) + 1;
       });
 
       const recentTransactions = transactionsSnap.docs
-        .sort((a, b) => b.data().createdAt?.toMillis() - a.data().createdAt?.toMillis())
-        .slice(0, 5)
-        .map(doc => {
-          const d = doc.data();
-          return {
-            id: doc.id,
-            amount: d.amount,
-            status: d.status,
-            type: d.type,
-            createdAt: d.createdAt?.toDate().toISOString(),
-            listingId: d.listingId,
-          };
-        });
+          .sort((a, b) => b.data().createdAt?.toMillis() - a.data().createdAt?.toMillis())
+          .slice(0, 5)
+          .map((doc) => {
+            const d = doc.data();
+            return {
+              id: doc.id,
+              amount: d.amount,
+              status: d.status,
+              type: d.type,
+              createdAt: d.createdAt?.toDate().toISOString(),
+              listingId: d.listingId,
+            };
+          });
 
       return {
-        summary: { totalUsers, totalRevenue, totalProperties },
+        summary: {totalUsers, totalRevenue, totalProperties},
         monthlyListings: Object.values(monthlyListings),
         statusBreakdown: statusCounts,
         recentTransactions,
       };
     } catch (e) {
-      throw new AppError(e.message || 'Failed to fetch dashboard stats', 500);
+      throw new AppError(e.message || "Failed to fetch dashboard stats", 500);
     }
   },
 
-  getUsers: async ({ search, page, limit }) => {
+  getUsers: async ({search, page, limit}) => {
     try {
       const pageNum = parseInt(page) || 1;
       const pageSize = parseInt(limit) || 20;
 
-      let snapshot = await db.collection('users').orderBy('createdAt', 'desc').get();
+      const snapshot = await db.collection("users").orderBy("createdAt", "desc").get();
 
-      let users = snapshot.docs.map(doc => {
+      let users = snapshot.docs.map((doc) => {
         const d = doc.data();
         return {
           id: doc.id,
-          firstName: d.firstName || '',
-          lastName: d.lastName || '',
-          email: d.email || '',
+          firstName: d.firstName || "",
+          lastName: d.lastName || "",
+          email: d.email || "",
           createdAt: d.createdAt?.toDate().toISOString() || null,
           termsVersion: d.termsVersion || null,
         };
@@ -160,77 +160,77 @@ const adminService = {
 
       if (search) {
         const s = search.toLowerCase();
-        users = users.filter(u =>
+        users = users.filter((u) =>
           u.firstName.toLowerCase().includes(s) ||
           u.lastName.toLowerCase().includes(s) ||
-          u.email.toLowerCase().includes(s)
+          u.email.toLowerCase().includes(s),
         );
       }
 
       const total = users.length;
       const paginated = users.slice((pageNum - 1) * pageSize, pageNum * pageSize);
 
-      return { users: paginated, total, page: pageNum, limit: pageSize };
+      return {users: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      throw new AppError(e.message || 'Failed to fetch users', 500);
+      throw new AppError(e.message || "Failed to fetch users", 500);
     }
   },
 
-  getTransactions: async ({ search, status, page, limit }) => {
+  getTransactions: async ({search, status, page, limit}) => {
     try {
       const pageNum = parseInt(page) || 1;
       const pageSize = parseInt(limit) || 20;
 
-      let query = db.collection('transactions').orderBy('createdAt', 'desc');
-      if (status) query = query.where('status', '==', status);
+      let query = db.collection("transactions").orderBy("createdAt", "desc");
+      if (status) query = query.where("status", "==", status);
 
       const snapshot = await query.get();
 
-      let transactions = snapshot.docs.map(doc => {
+      let transactions = snapshot.docs.map((doc) => {
         const d = doc.data();
         return {
           id: doc.id,
           amount: d.amount || 0,
-          status: d.status || 'unknown',
-          type: d.type || '',
+          status: d.status || "unknown",
+          type: d.type || "",
           createdAt: d.createdAt?.toDate().toISOString() || null,
-          listingId: d.listingId || '',
-          customerId: d.customerId || '',
-          paymentIntentId: d.paymentIntentId || '',
+          listingId: d.listingId || "",
+          customerId: d.customerId || "",
+          paymentIntentId: d.paymentIntentId || "",
           attemptCount: d.attemptCount || 1,
         };
       });
 
       if (search) {
         const s = search.toLowerCase();
-        transactions = transactions.filter(t =>
+        transactions = transactions.filter((t) =>
           t.id.toLowerCase().includes(s) ||
           t.listingId.toLowerCase().includes(s) ||
           t.paymentIntentId.toLowerCase().includes(s) ||
-          t.customerId.toLowerCase().includes(s)
+          t.customerId.toLowerCase().includes(s),
         );
       }
 
       const total = transactions.length;
       const paginated = transactions.slice((pageNum - 1) * pageSize, pageNum * pageSize);
 
-      return { transactions: paginated, total, page: pageNum, limit: pageSize };
+      return {transactions: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      throw new AppError(e.message || 'Failed to fetch transactions', 500);
+      throw new AppError(e.message || "Failed to fetch transactions", 500);
     }
   },
 
-  getListings: async ({ search, status, page, limit }) => {
+  getListings: async ({search, status, page, limit}) => {
     try {
       const pageNum = parseInt(page) || 1;
       const pageSize = parseInt(limit) || 20;
 
-      let query = db.collection('properties').orderBy('updatedAt', 'desc');
-      if (status) query = query.where('status', '==', status);
+      let query = db.collection("properties").orderBy("updatedAt", "desc");
+      if (status) query = query.where("status", "==", status);
 
       const snapshot = await query.get();
 
-      let listings = snapshot.docs.map(doc => {
+      let listings = snapshot.docs.map((doc) => {
         const d = doc.data();
 
         const loc = d.Location || {};
@@ -242,26 +242,26 @@ const adminService = {
           loc.municipality,
           loc.area,
         ].filter(Boolean);
-        const address = addressParts.join(' ') || '';
+        const address = addressParts.join(" ") || "";
 
         const exterior = d.Exterior || {};
         const title = [d.subType, exterior.propertyType]
-          .filter(Boolean)
-          .join(' ') || 'Unlisted Property';
+            .filter(Boolean)
+            .join(" ") || "Unlisted Property";
 
         const photos = d.media?.photos || [];
-        logger.info('Photos for listing', photos.length);
+        logger.info("Photos for listing", photos.length);
         const thumbnail = photos[0]?.url || null;
 
         return {
           id: doc.id,
-          status: d.status || 'pending',
+          status: d.status || "pending",
           title,
           address,
-          propertyType: d.propertyType || '',
-          subType: d.subType || '',         
-          saleType: d.saleType || '',
-          listPrice: d.contractCommencement?.listPrice || '',
+          propertyType: d.propertyType || "",
+          subType: d.subType || "",
+          saleType: d.saleType || "",
+          listPrice: d.contractCommencement?.listPrice || "",
           thumbnail,
           updatedAt: d.updatedAt?.toDate().toISOString() || null,
         };
@@ -269,72 +269,71 @@ const adminService = {
 
       if (search) {
         const s = search.toLowerCase();
-        listings = listings.filter(l =>
+        listings = listings.filter((l) =>
           l.title.toLowerCase().includes(s) ||
           l.address.toLowerCase().includes(s) ||
           l.subType.toLowerCase().includes(s) ||
-          l.propertyType.toLowerCase().includes(s)
+          l.propertyType.toLowerCase().includes(s),
         );
       }
 
       const total = listings.length;
       const paginated = listings.slice((pageNum - 1) * pageSize, pageNum * pageSize);
 
-      return { listings: paginated, total, page: pageNum, limit: pageSize };
+      return {listings: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      logger.info(e)
-      throw new AppError(e.message || 'Failed to fetch listings', 500);
+      logger.info(e);
+      throw new AppError(e.message || "Failed to fetch listings", 500);
     }
   },
 
   getListingById: async (listingId) => {
     try {
-      const doc = await db.collection('properties').doc(listingId).get();
-      if (!doc.exists) throw new AppError('Listing not found', 404);
+      const doc = await db.collection("properties").doc(listingId).get();
+      if (!doc.exists) throw new AppError("Listing not found", 404);
 
       const d = doc.data();
-      return { id: doc.id, ...d };
+      return {id: doc.id, ...d};
     } catch (e) {
-      throw new AppError(e.message || 'Failed to fetch listing', e.statusCode || 500);
+      throw new AppError(e.message || "Failed to fetch listing", e.statusCode || 500);
     }
   },
 
   updateListing: async (listingId, payload) => {
     try {
-      const { Timestamp } = require('firebase-admin/firestore');
-      const { FieldValue } = require('firebase-admin/firestore');
+      const {FieldValue} = require("firebase-admin/firestore");
 
       const clean = (obj) => {
-        if (!obj || typeof obj !== 'object') return obj;
+        if (!obj || typeof obj !== "object") return obj;
         return Object.fromEntries(
-          Object.entries(obj)
-            .filter(([_, v]) => v !== undefined)
-            .map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) ? clean(v) : v])
+            Object.entries(obj)
+                .filter(([_, v]) => v !== undefined)
+                .map(([k, v]) => [k, v && typeof v === "object" && !Array.isArray(v) ? clean(v) : v]),
         );
       };
 
       const cleanedPayload = clean(payload);
 
-      await db.collection('properties').doc(listingId).set(
-        { ...cleanedPayload, updatedAt: FieldValue.serverTimestamp() },
-        { merge: true }
+      await db.collection("properties").doc(listingId).set(
+          {...cleanedPayload, updatedAt: FieldValue.serverTimestamp()},
+          {merge: true},
       );
 
-      return { success: true };
+      return {success: true};
     } catch (e) {
-      throw new AppError(e.message || 'Failed to update listing', 500);
+      throw new AppError(e.message || "Failed to update listing", 500);
     }
   },
 
   updateListingStatus: async (listingId, status) => {
     try {
-      const { FieldValue } = require('firebase-admin/firestore');
-      const validStatuses = ['draft', 'pending', 'active', 'closed'];
-      if (!validStatuses.includes(status)) throw new AppError('Invalid status', 400);
+      const {FieldValue} = require("firebase-admin/firestore");
+      const validStatuses = ["draft", "pending", "active", "closed"];
+      if (!validStatuses.includes(status)) throw new AppError("Invalid status", 400);
 
-      const docRef = db.collection('properties').doc(listingId);
+      const docRef = db.collection("properties").doc(listingId);
       const docSnap = await docRef.get();
-      if (!docSnap.exists) throw new AppError('Listing not found', 404);
+      if (!docSnap.exists) throw new AppError("Listing not found", 404);
 
       const existing = docSnap.data();
       const previousStatus = existing.status;
@@ -361,24 +360,24 @@ const adminService = {
 
           await notificationService.createNotification({
             userId: existing.ownerId,
-            type: 'status_change',
-            severity: STATUS_SEVERITY[status] || 'info',
-            title: 'Listing status updated',
+            type: "status_change",
+            severity: STATUS_SEVERITY[status] || "info",
+            title: "Listing status updated",
             message: `Your listing status has been updated to "${humanizeStatus(status)}".`,
             listingId,
-            listingAddress: addressParts.join(' ') || null,
+            listingAddress: addressParts.join(" ") || null,
             actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
-            actionLabel: 'View Listing',
+            actionLabel: "View Listing",
           });
         } catch (notifyErr) {
-          logger.error('[notif] Failed to notify owner of status change:', notifyErr);
+          logger.error("[notif] Failed to notify owner of status change:", notifyErr);
         }
       }
 
-      return { success: true };
+      return {success: true};
     } catch (e) {
       if (e instanceof AppError) throw e;
-      throw new AppError(e.message || 'Failed to update status', 500);
+      throw new AppError(e.message || "Failed to update status", 500);
     }
   },
 
@@ -402,14 +401,14 @@ const adminService = {
         loc.municipality,
         loc.area,
       ].filter(Boolean);
-      const address = addressParts.join(' ') || 'unknown-address';
+      const address = addressParts.join(" ") || "unknown-address";
 
-      const safeAddress = address.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+      const safeAddress = address.replace(/[^a-zA-Z0-9 -]/g, "").trim();
       const uid = data.uid || data.userId || listingId;
       const folderName = `${safeAddress} - ${uid}`;
 
       const zipStream = new PassThrough();
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      const archive = archiver("zip", {zlib: {level: 9}});
 
       archive.pipe(zipStream);
 
@@ -422,12 +421,12 @@ const adminService = {
 
             if (imageUrl) {
               const response = await axios.get(imageUrl, {
-                responseType: 'arraybuffer',
-                timeout: 30000
+                responseType: "arraybuffer",
+                timeout: 30000,
               });
 
               archive.append(Buffer.from(response.data), {
-                name: `${folderName}/photos/photo_${i + 1}.jpg`
+                name: `${folderName}/photos/photo_${i + 1}.jpg`,
               });
             }
           } catch (error) {
@@ -445,15 +444,15 @@ const adminService = {
 
             if (docUrl) {
               const response = await axios.get(docUrl, {
-                responseType: 'arraybuffer',
-                timeout: 30000
+                responseType: "arraybuffer",
+                timeout: 30000,
               });
 
-              const ext = doc.name ? doc.name.split('.').pop() : 'pdf';
+              const ext = doc.name ? doc.name.split(".").pop() : "pdf";
               const filename = doc.name || `document_${i + 1}.${ext}`;
 
               archive.append(Buffer.from(response.data), {
-                name: `${folderName}/documents/${filename}`
+                name: `${folderName}/documents/${filename}`,
               });
             }
           } catch (error) {
@@ -464,13 +463,12 @@ const adminService = {
 
       await archive.finalize();
 
-      return { folderName, zipStream };
-
+      return {folderName, zipStream};
     } catch (e) {
       logger.error("Error in downloadPropertyAsZip:", e);
       throw new AppError(`Failed to create property zip: ${e.message}`, 500);
     }
   },
-}
+};
 
-module.exports = adminService
+module.exports = adminService;

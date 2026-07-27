@@ -3,44 +3,44 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const app = express();
 
-const authRoutes = require('./routes/authRoutes')
-const userRoutes = require('./routes/userRoutes')
-const propertyRoutes = require('./routes/propertyRoutes')
-const scheduleRoutes = require('./routes/scheduleRoutes')
-const adminRoutes = require('./routes/adminRoutes')
-const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes')
-const notificationRoutes = require('./routes/notificationRoutes')
-const actionRoutes = require('./routes/actionRoutes')
-const dashboardRoutes = require('./routes/dashboardRoutes')
+const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const propertyRoutes = require("./routes/propertyRoutes");
+const scheduleRoutes = require("./routes/scheduleRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const actionRoutes = require("./routes/actionRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
-const handleError = require('./middlewares/errorHandler')
+const handleError = require("./middlewares/errorHandler");
 
 app.use(
-  cors({
-    origin: [
-      `${process.env.FRONTEND_URL}`,
-      'https://mere-postings-admin-staging.web.app',
-      'https://mere-posting-staging.web.app',
-    ],
-    exposedHeaders: ['X-Zip-Filename'],
-    credentials: true,
-  })
+    cors({
+      origin: [
+        `${process.env.FRONTEND_URL}`,
+        "https://mere-postings-admin-staging.web.app",
+        "https://mere-posting-staging.web.app",
+      ],
+      exposedHeaders: ["X-Zip-Filename"],
+      credentials: true,
+    }),
 );
 
 app.use("/v1/webhook", stripeWebhookRoutes);
 
 app.use(cookieParser());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({extended: true}));
 
-app.use('/v1/auth', authRoutes)
-app.use('/v1/user', userRoutes)
-app.use('/v1/property', propertyRoutes)
-app.use('/v1/schedule', scheduleRoutes)
-app.use('/v1/admin', adminRoutes)
-app.use('/v1/notification', notificationRoutes)
-app.use('/v1/action', actionRoutes)
-app.use('/v1/dashboard', dashboardRoutes)
+app.use("/v1/auth", authRoutes);
+app.use("/v1/user", userRoutes);
+app.use("/v1/property", propertyRoutes);
+app.use("/v1/schedule", scheduleRoutes);
+app.use("/v1/admin", adminRoutes);
+app.use("/v1/notification", notificationRoutes);
+app.use("/v1/action", actionRoutes);
+app.use("/v1/dashboard", dashboardRoutes);
 
 app.use(handleError);
 

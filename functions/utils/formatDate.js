@@ -1,33 +1,33 @@
 const formatDate = (dateInput) => {
-    if (!dateInput) return null;
-    let date;
-    if (dateInput.toDate) {
-        date = dateInput.toDate();
-    } else if (typeof dateInput === 'string') {
-        date = new Date(dateInput);
-    } else if (dateInput instanceof Date) {
-        date = dateInput;
-    } else if (typeof dateInput === 'number') {
-        date = new Date(dateInput);
-    } else {
-        return null;
-    }
-    if (isNaN(date.getTime())) return null;
-    return new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone: 'UTC'
-    }).format(date);
+  if (!dateInput) return null;
+  let date;
+  if (dateInput.toDate) {
+    date = dateInput.toDate();
+  } else if (typeof dateInput === "string") {
+    date = new Date(dateInput);
+  } else if (dateInput instanceof Date) {
+    date = dateInput;
+  } else if (typeof dateInput === "number") {
+    date = new Date(dateInput);
+  } else {
+    return null;
+  }
+  if (isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 };
 
 function formatTime(date) {
-    return date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/Toronto'
-    });
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Toronto",
+  });
 }
 
 
@@ -46,19 +46,19 @@ const buildISODateTime = (
     month,
     day,
     timeRange,
-    timezoneOffset = "-05:00"
+    timezoneOffset = "-05:00",
 ) => {
-    const startTime = timeRange.split(" - ")[0];
-    const time24 = convertTo24Hour(startTime);
+  const startTime = timeRange.split(" - ")[0];
+  const time24 = convertTo24Hour(startTime);
 
-    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
-        2,
-        "0"
-    )}T${time24}${timezoneOffset}`;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
+      2,
+      "0",
+  )}T${time24}${timezoneOffset}`;
 };
 
-export {
-    formatDate,
-    formatTime,
-    buildISODateTime
-}
+module.exports = {
+  formatDate,
+  formatTime,
+  buildISODateTime,
+};

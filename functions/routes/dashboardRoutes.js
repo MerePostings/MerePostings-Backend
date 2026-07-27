@@ -6,7 +6,7 @@ const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 router.get(
     "/",
     verifyFirebaseToken,
-    dashboardController.getDashboard
+    dashboardController.getDashboard,
 );
 
 module.exports = router;

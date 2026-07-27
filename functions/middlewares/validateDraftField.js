@@ -1,6 +1,6 @@
-const { draftFieldEnvelopeSchema } = require('../validators/property/schemas');
-const { getFieldDefinition } = require('../validators/property/fieldRegistry');
-const formatJoiError = require('../utils/formatJoiError');
+const {draftFieldEnvelopeSchema} = require("../validators/property/schemas");
+const {getFieldDefinition} = require("../validators/property/fieldRegistry");
+const formatJoiError = require("../utils/formatJoiError");
 
 /**
  * Validates the draft auto-save payload in two passes:
@@ -17,47 +17,47 @@ const formatJoiError = require('../utils/formatJoiError');
  *   { propertyType, fieldName, fieldValue, path, dbKey }
  */
 const validateDraftField = (req, res, next) => {
-    const { error: envelopeError, value: envelope } = draftFieldEnvelopeSchema.validate(req.body, {
-        abortEarly: false,
+  const {error: envelopeError, value: envelope} = draftFieldEnvelopeSchema.validate(req.body, {
+    abortEarly: false,
+  });
+
+  if (envelopeError) {
+    return res.status(400).json({success: false, errors: formatJoiError(envelopeError)});
+  }
+
+  const {propertyType, fieldName, fieldValue} = envelope;
+  const fieldDef = getFieldDefinition(propertyType, fieldName);
+
+  if (!fieldDef) {
+    return res.status(400).json({
+      success: false,
+      errors: [
+        {
+          field: fieldName,
+          message: `"${fieldName}" is not a valid field for property type "${propertyType}"`,
+        },
+      ],
     });
+  }
 
-    if (envelopeError) {
-        return res.status(400).json({ success: false, errors: formatJoiError(envelopeError) });
-    }
+  const {error: valueError, value: validatedValue} = fieldDef.schema.validate(fieldValue, {
+    abortEarly: false,
+    convert: true,
+  });
 
-    const { propertyType, fieldName, fieldValue } = envelope;
-    const fieldDef = getFieldDefinition(propertyType, fieldName);
+  if (valueError) {
+    return res.status(400).json({success: false, errors: formatJoiError(valueError, fieldName)});
+  }
 
-    if (!fieldDef) {
-        return res.status(400).json({
-            success: false,
-            errors: [
-                {
-                    field: fieldName,
-                    message: `"${fieldName}" is not a valid field for property type "${propertyType}"`,
-                },
-            ],
-        });
-    }
+  req.validatedField = {
+    propertyType,
+    fieldName,
+    fieldValue: validatedValue,
+    path: fieldDef.path,
+    dbKey: fieldDef.dbKey,
+  };
 
-    const { error: valueError, value: validatedValue } = fieldDef.schema.validate(fieldValue, {
-        abortEarly: false,
-        convert: true,
-    });
-
-    if (valueError) {
-        return res.status(400).json({ success: false, errors: formatJoiError(valueError, fieldName) });
-    }
-
-    req.validatedField = {
-        propertyType,
-        fieldName,
-        fieldValue: validatedValue,
-        path: fieldDef.path,
-        dbKey: fieldDef.dbKey,
-    };
-
-    next();
+  next();
 };
 
 module.exports = validateDraftField;

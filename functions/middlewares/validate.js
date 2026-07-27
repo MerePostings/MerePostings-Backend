@@ -6,32 +6,32 @@
  * @param {import('joi').Schema} schema
  * @param {'body'|'query'|'params'} [property]
  */
-const validate = (schema, property = 'body') => (req, res, next) => {
-    const { error, value } = schema.validate(req[property], {
-        abortEarly: false,
-        stripUnknown: true,
-        convert: true,
+const validate = (schema, property = "body") => (req, res, next) => {
+  const {error, value} = schema.validate(req[property], {
+    abortEarly: false,
+    stripUnknown: true,
+    convert: true,
+  });
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      errors: error.details.map((d) => ({field: d.path.join("."), message: d.message})),
     });
+  }
 
-    if (error) {
-        return res.status(400).json({
-            success: false,
-            errors: error.details.map((d) => ({ field: d.path.join('.'), message: d.message })),
-        });
-    }
+  if (property === "query") {
+    Object.defineProperty(req, "query", {
+      value,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+  } else {
+    req[property] = value;
+  }
 
-    if (property === 'query') {
-        Object.defineProperty(req, 'query', {
-            value,
-            configurable: true,
-            enumerable: true,
-            writable: true,
-        });
-    } else {
-        req[property] = value;
-    }
-
-    next();
+  next();
 };
 
 module.exports = validate;

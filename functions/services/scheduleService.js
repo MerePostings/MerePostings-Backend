@@ -1,17 +1,17 @@
 require("dotenv").config();
 const logger = require("firebase-functions/logger");
-const { db } = require("../config/db");
+const {db} = require("../config/db");
 const AppError = require("../utils/AppError");
-const { calendar, calendarId } = require("../config/googleOAuth");
-const { formatTime } = require("../utils/formatDate");
-const { meetingScheduled } = require("./mailService");
-const { DateTime } = require("luxon");
+const {calendar, calendarId} = require("../config/googleOAuth");
+const {formatTime} = require("../utils/formatDate");
+const {meetingScheduled} = require("./mailService");
+const {DateTime} = require("luxon");
 
 const timeZone = "America/Toronto";
 
 const googleFunctionsService = {
-  
-	getGoogleCalendar: async (req, res) => {
+
+  getGoogleCalendar: async (req, res) => {
     try {
       const response = await calendar.events.list({
         calendarId: calendarId,
@@ -45,23 +45,23 @@ const googleFunctionsService = {
 
       if (userDoc.data().lastMeeting) {
         const lastMeetingDate = DateTime.fromJSDate(userDoc.data().lastMeeting.toDate());
-        const oneDayAgo = DateTime.now().minus({ days: 1 });
+        const oneDayAgo = DateTime.now().minus({days: 1});
 
         if (lastMeetingDate > oneDayAgo) {
           throw new AppError(
-            "You have already booked a meeting with us today. If you would like to book another meeting, please contact us at support@merepostings.com",
-            400
+              "You have already booked a meeting with us today. If you would like to book another meeting, please contact us at support@merepostings.com",
+              400,
           );
         }
       }
 
-      const startDate = DateTime.fromISO(startDateTime, { zone: timeZone });
+      const startDate = DateTime.fromISO(startDateTime, {zone: timeZone});
 
       if (startDate < DateTime.now().setZone(timeZone)) {
         throw new AppError("Cannot book a time slot in the past", 400);
       }
 
-      const endDate = startDate.plus({ hours: 1 });
+      const endDate = startDate.plus({hours: 1});
 
       const email = userDoc.data().email;
       const name = userDoc.data().firstName;
@@ -93,8 +93,8 @@ const googleFunctionsService = {
         reminders: {
           useDefault: false,
           overrides: [
-            { method: "email", minutes: 1440 },
-            { method: "popup", minutes: 10 },
+            {method: "email", minutes: 1440},
+            {method: "popup", minutes: 10},
           ],
         },
       };
@@ -106,7 +106,7 @@ const googleFunctionsService = {
         sendUpdates: "all",
       });
 
-      await userRef.update({ lastMeeting: DateTime.now().toJSDate() });
+      await userRef.update({lastMeeting: DateTime.now().toJSDate()});
       await meetingScheduled(email, name, humanDate, time, link);
       return response.data;
     } catch (error) {
@@ -122,7 +122,7 @@ const googleFunctionsService = {
         throw new AppError("Year and month are required", 400);
       }
 
-      const startOfMonth = DateTime.fromObject({ year, month, day: 1 }, { zone: timeZone });
+      const startOfMonth = DateTime.fromObject({year, month, day: 1}, {zone: timeZone});
       const endOfMonth = startOfMonth.endOf("month");
 
       const response = await calendar.events.list({
@@ -142,11 +142,11 @@ const googleFunctionsService = {
       const unbookableDays = [];
 
       for (let day = 1; day <= daysInMonth; day++) {
-        const currentDate = DateTime.fromObject({ year, month, day }, { zone: timeZone });
+        const currentDate = DateTime.fromObject({year, month, day}, {zone: timeZone});
         const dateString = currentDate.toISODate();
 
         const dayEvents = events.filter((event) => {
-          const eventStart = DateTime.fromISO(event.start.dateTime || event.start.date, { zone: timeZone });
+          const eventStart = DateTime.fromISO(event.start.dateTime || event.start.date, {zone: timeZone});
           return eventStart.toISODate() === dateString;
         });
 
@@ -178,8 +178,8 @@ const googleFunctionsService = {
         throw new AppError("Year, month, and day are required", 400);
       }
 
-      const startOfDay = DateTime.fromObject({ year, month, day, hour: 9 }, { zone: timeZone });
-      const endOfDay = DateTime.fromObject({ year, month, day, hour: 17 }, { zone: timeZone });
+      const startOfDay = DateTime.fromObject({year, month, day, hour: 9}, {zone: timeZone});
+      const endOfDay = DateTime.fromObject({year, month, day, hour: 17}, {zone: timeZone});
 
       const response = await calendar.events.list({
         calendarId,
@@ -196,38 +196,38 @@ const googleFunctionsService = {
       const events = response.data.items || [];
 
       const bookedSlots = events.map((event) => ({
-        start: DateTime.fromISO(event.start.dateTime || event.start.date, { zone: timeZone }),
-        end: DateTime.fromISO(event.end.dateTime || event.end.date, { zone: timeZone }),
+        start: DateTime.fromISO(event.start.dateTime || event.start.date, {zone: timeZone}),
+        end: DateTime.fromISO(event.end.dateTime || event.end.date, {zone: timeZone}),
       }));
 
       const allPossibleSlots = [];
       for (let hour = 9; hour < 17; hour++) {
-        const slotStart = DateTime.fromObject({ year, month, day, hour }, { zone: timeZone });
-        const slotEnd = DateTime.fromObject({ year, month, day, hour: hour + 1 }, { zone: timeZone });
-        allPossibleSlots.push({ start: slotStart, end: slotEnd });
+        const slotStart = DateTime.fromObject({year, month, day, hour}, {zone: timeZone});
+        const slotEnd = DateTime.fromObject({year, month, day, hour: hour + 1}, {zone: timeZone});
+        allPossibleSlots.push({start: slotStart, end: slotEnd});
       }
 
       const now = DateTime.now().setZone(timeZone);
 
       const availableSlots = allPossibleSlots
-        .filter((slot) => {
-          const isPast = slot.start < now;
-          return (
-            !isPast &&
+          .filter((slot) => {
+            const isPast = slot.start < now;
+            return (
+              !isPast &&
             !bookedSlots.some((booked) => slot.start < booked.end && slot.end > booked.start)
-          );
-        })
-        .map((slot) => ({
-          start: slot.start.toISO(),
-          end: slot.end.toISO(),
-          startTime: formatTime(slot.start.toJSDate()),
-          endTime: formatTime(slot.end.toJSDate()),
-        }));
+            );
+          })
+          .map((slot) => ({
+            start: slot.start.toISO(),
+            end: slot.end.toISO(),
+            startTime: formatTime(slot.start.toJSDate()),
+            endTime: formatTime(slot.end.toJSDate()),
+          }));
 
       return {
         date: startOfDay.toISODate(),
         dayOfWeek: startOfDay.toFormat("cccc"),
-        businessHours: { start: "9:00 AM", end: "5:00 PM" },
+        businessHours: {start: "9:00 AM", end: "5:00 PM"},
         availableSlots,
         totalAvailableSlots: availableSlots.length,
         fullyBooked: availableSlots.length === 0,

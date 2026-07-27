@@ -6,19 +6,19 @@ const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 router.put(
     "/update-user",
     verifyFirebaseToken,
-    userController.updateUserProfile
+    userController.updateUserProfile,
 );
 
 router.get(
     "/get-user",
     verifyFirebaseToken,
-    userController.getUserById
+    userController.getUserById,
 );
 
 router.get(
     "/get-user-transactions",
     verifyFirebaseToken,
-    userController.getUserTransactions
+    userController.getUserTransactions,
 );
 
 

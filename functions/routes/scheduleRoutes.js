@@ -1,27 +1,27 @@
-const express = require('express');
-const scheduleController = require('../controllers/scheduleController');
+const express = require("express");
+const scheduleController = require("../controllers/scheduleController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 
 router.get(
     "/get-calendar",
-    scheduleController.getGoogleCalendar
+    scheduleController.getGoogleCalendar,
 );
 
 router.post(
     "/create-event",
     verifyFirebaseToken,
-    scheduleController.createCalendarEvent
+    scheduleController.createCalendarEvent,
 );
 
 router.get(
     "/schedule-meeting",
-    scheduleController.checkMonthAvailability
+    scheduleController.checkMonthAvailability,
 );
 
 router.get(
     "/schedule-time",
-    scheduleController.checkDayAvailability
+    scheduleController.checkDayAvailability,
 );
 
-module.exports = router
+module.exports = router;

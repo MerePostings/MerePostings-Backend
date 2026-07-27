@@ -1,11 +1,11 @@
 const NOTIFICATION_TYPES = [
-  'status_change',
-  'message',
-  'system',
-  'action_update',
+  "status_change",
+  "message",
+  "system",
+  "action_update",
 ];
 
-const SEVERITIES = ['info', 'success', 'warning', 'urgent'];
+const SEVERITIES = ["info", "success", "warning", "urgent"];
 
 /**
  * Whether a user should receive an email for a given notification type.
@@ -18,4 +18,4 @@ const isEmailOptedIn = (preferences, type) => {
   return value !== false;
 };
 
-module.exports = { NOTIFICATION_TYPES, SEVERITIES, isEmailOptedIn };
+module.exports = {NOTIFICATION_TYPES, SEVERITIES, isEmailOptedIn};
