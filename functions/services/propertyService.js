@@ -6,6 +6,7 @@ const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
 const { ADDONS_BY_ID } = require('../data/addons')
 const actionService = require('./actionService')
+const notificationService = require('./notificationService')
 const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
 
 const MEDIA_LIMITS = {
@@ -517,7 +518,8 @@ const propertyService = {
      */
     markSubmitted: async (listingId) => {
         try {
-            await db.collection('properties').doc(listingId).update({
+            const docRef = db.collection('properties').doc(listingId);
+            await docRef.update({
                 status: 'submitted',
                 paid: true,
                 submittedAt: FieldValue.serverTimestamp(),

@@ -1,6 +1,8 @@
 jest.mock("../../config/db");
+jest.mock("../actionService");
 
 const {__refs: dbRefs, resetDbMock} = require("../../config/db");
+const actionService = require("../actionService");
 const propertyService = require("../propertyService");
 
 describe("propertyService.saveDraftField", () => {
@@ -126,6 +128,22 @@ describe("propertyService.markSubmitted", () => {
     dbRefs.docRef.update.mockRejectedValueOnce(new Error("firestore down"));
 
     await expect(propertyService.markSubmitted("listing-1")).resolves.toBeUndefined();
+  });
+
+  // Regression test: markSubmitted used to re-fetch the listing via a
+  // `docRef` variable that was never declared in this function's scope
+  // (only inlined `db.collection(...).doc(listingId)` calls existed),
+  // throwing a ReferenceError that was silently swallowed by the inner
+  // try/catch. Actions (photo_upload, document_upload, verification, ...)
+  // were consequently never generated for ANY submitted listing.
+  test("fetches the listing doc and generates actions for it after marking submitted", async () => {
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+    const propertyData = {ownerId: "user-1", selectedAddons: [], location: {}};
+    dbRefs.docRef.get.mockResolvedValueOnce({data: () => propertyData});
+
+    await propertyService.markSubmitted("listing-1");
+
+    expect(actionService.generateActionsForListing).toHaveBeenCalledWith("listing-1", propertyData);
   });
 });
 
