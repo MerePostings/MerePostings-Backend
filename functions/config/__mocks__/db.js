@@ -31,8 +31,19 @@ const collectionRef = {
   get: jest.fn(),
 };
 
+const tx = {
+  get: jest.fn(),
+  getAll: jest.fn(),
+  set: jest.fn(),
+  update: jest.fn(),
+};
+
 const db = {
   collection: jest.fn(() => collectionRef),
+  // Runs the callback synchronously against the shared `tx` stand-in and
+  // returns whatever it returns, mirroring real Firestore's runTransaction.
+  // Tests control behavior entirely via tx.get/getAll/set/update mocks.
+  runTransaction: jest.fn((fn) => fn(tx)),
 };
 
 const bucketFile = {
@@ -41,11 +52,12 @@ const bucketFile = {
   delete: jest.fn(),
 };
 
-const bucket = {
+// config/db.js exports `storage` as an already-bucket-scoped object
+// (admin.storage().bucket()), so real callers do storage.file(...) directly —
+// there is no separate .bucket() hop to mock.
+const storage = {
   file: jest.fn(() => bucketFile),
 };
-
-const storage = {bucket: jest.fn(() => bucket)};
 
 function resetDbMock() {
   docRef.get.mockReset();
@@ -57,6 +69,13 @@ function resetDbMock() {
   bucketFile.save.mockReset();
   bucketFile.getSignedUrl.mockReset();
   bucketFile.delete.mockReset();
+  storage.file.mockClear();
+  tx.get.mockReset();
+  tx.getAll.mockReset();
+  tx.set.mockReset();
+  tx.update.mockReset();
+  db.runTransaction.mockClear();
+  db.runTransaction.mockImplementation((fn) => fn(tx));
 }
 
-module.exports = {db, storage, resetDbMock, __refs: {docRef, queryRef, collectionRef, bucket, bucketFile}};
+module.exports = {db, storage, resetDbMock, __refs: {docRef, queryRef, collectionRef, bucketFile, tx}};
