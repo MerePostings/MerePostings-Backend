@@ -3,6 +3,8 @@ const adminController = require("../controllers/adminController");
 const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyAdminFirebaseToken = require("../middlewares/verifyAdminFirebaseToken");
+const validate = require("../middlewares/validate");
+const { adminCounterTimeSchema, adminFinalizeTimeSchema } = require("../validators/action/schemas.js");
 
 router.post("/admin-login",             adminController.handleAdminLogin);
 
@@ -16,9 +18,16 @@ router.get('/listings',                 adminController.getListings);
 router.get('/listings/:listingId',      adminController.getListingById);
 router.patch('/listings/:listingId',              adminController.updateListing);
 router.patch('/listings/:listingId/status',       adminController.updateListingStatus);
-router.patch('/listings/:listingId/tracking',     adminController.updateTrackingStep);
+router.get('/listings/:listingId/progress-tracker',   adminController.getProgressTracker);
+router.patch('/listings/:listingId/progress-tracker',  adminController.updateProgressStep);
 router.post('/:listingId/media/:mediaType',         propertyController.uploadMedia);
 router.delete('/:listingId/media/:mediaType',       propertyController.removeMedia);
 router.patch('/:listingId/media/:mediaType/reorder',propertyController.reorderMedia);
+
+router.get('/actions/scheduling-queue',            adminController.listActionSchedulingQueue);
+router.get('/actions/confirmed',                   adminController.listConfirmedAppointments);
+router.patch('/actions/:actionId/counter-time',    validate(adminCounterTimeSchema), adminController.counterActionTime);
+router.patch('/actions/:actionId/finalize-time',   validate(adminFinalizeTimeSchema), adminController.finalizeActionTime);
+router.patch('/actions/:actionId/complete',        adminController.completeAction);
 
 module.exports = router;

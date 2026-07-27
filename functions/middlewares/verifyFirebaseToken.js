@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const firebaseAdmin = require("../config/firebaseAdmin");
 
 const verifyFirebaseToken = async (req, res, next) => {
@@ -15,7 +16,7 @@ const verifyFirebaseToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Firebase Auth error:", error.message);
+    logger.error("Firebase Auth error:", error.message);
     return res.status(401).json({ error: "Unauthorized" });
   }
 };

@@ -1,4 +1,5 @@
 require('dotenv').config({ path: '.env' });
+const logger = require('firebase-functions/logger');
 const hubspot = require('@hubspot/api-client');
 const OBJECTS_LIMIT = 100;
 
@@ -32,7 +33,7 @@ const findContactByEmail = async (email) => {
 
     return null;
   } catch (error) {
-    console.log(error)
+    logger.error(error)
     return null;
   }
 };
@@ -44,7 +45,7 @@ const createContactIfNotExists = async (properties) => {
 
   const existingContact = await findContactByEmail(email);
   if (existingContact) {
-    console.log('Contact already exists with ID:', existingContact.id);
+    logger.info('Contact already exists with ID:', existingContact.id);
     return existingContact.id;
   }
 

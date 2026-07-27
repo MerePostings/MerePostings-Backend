@@ -734,8 +734,20 @@ const meetingScheduled = async (email, name, date, time, link) => {
   });
 };
 
+const sendNotificationEmail = async (email, subject, htmlBody) => {
+  await client.sendEmail({
+    From: process.env.EMAILUSER,
+    To: email,
+    Subject: subject,
+    HtmlBody: htmlBody,
+    MessageStream: "notifications",
+  });
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPaymentConfirmationEmail,
-  meetingScheduled
+  meetingScheduled,
+  sendNotificationEmail,
+  client
 };

@@ -1,9 +1,14 @@
 require("dotenv").config();
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError");
 const archiver = require('archiver');
 const axios = require('axios');
 const { PassThrough } = require('stream');
+const notificationService = require('./notificationService');
+
+const STATUS_SEVERITY = { draft: 'info', pending: 'info', active: 'success', closed: 'info' };
+const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
 
 const adminService = {
   handleAdminLogin: async (email) => {
@@ -245,7 +250,7 @@ const adminService = {
           .join(' ') || 'Unlisted Property';
 
         const photos = d.media?.photos || [];
-        console.log('Photos for listing', photos.length);
+        logger.info('Photos for listing', photos.length);
         const thumbnail = photos[0]?.url || null;
 
         return {
@@ -277,7 +282,7 @@ const adminService = {
 
       return { listings: paginated, total, page: pageNum, limit: pageSize };
     } catch (e) {
-      console.log(e)
+      logger.info(e)
       throw new AppError(e.message || 'Failed to fetch listings', 500);
     }
   },
@@ -327,27 +332,53 @@ const adminService = {
       const validStatuses = ['draft', 'pending', 'active', 'closed'];
       if (!validStatuses.includes(status)) throw new AppError('Invalid status', 400);
 
-      await db.collection('properties').doc(listingId).update({
+      const docRef = db.collection('properties').doc(listingId);
+      const docSnap = await docRef.get();
+      if (!docSnap.exists) throw new AppError('Listing not found', 404);
+
+      const existing = docSnap.data();
+      const previousStatus = existing.status;
+
+      await docRef.update({
         status,
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      return { success: true };
-    } catch (e) {
-      throw new AppError(e.message || 'Failed to update status', 500);
-    }
-  },
+      // Notify the owner, best-effort — a failed notification/email
+      // shouldn't fail the status update itself, and there's nothing to
+      // notify about if the status didn't actually change.
+      if (existing.ownerId && previousStatus !== status) {
+        try {
+          const loc = existing.Location || {};
+          const addressParts = [
+            loc.streetNumber,
+            loc.streetName,
+            loc.streetDirection,
+            loc.apartmentUnitNumber ? `Unit ${loc.apartmentUnitNumber}` : null,
+            loc.municipality,
+            loc.area,
+          ].filter(Boolean);
 
-  updateTrackingStep: async (listingId, stepId, completed) => {
-    try {
-      const { FieldValue } = require('firebase-admin/firestore');
-      await db.collection('properties').doc(listingId).update({
-        [`tracking.${stepId}`]: completed,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+          await notificationService.createNotification({
+            userId: existing.ownerId,
+            type: 'status_change',
+            severity: STATUS_SEVERITY[status] || 'info',
+            title: 'Listing status updated',
+            message: `Your listing status has been updated to "${humanizeStatus(status)}".`,
+            listingId,
+            listingAddress: addressParts.join(' ') || null,
+            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionLabel: 'View Listing',
+          });
+        } catch (notifyErr) {
+          logger.error('[notif] Failed to notify owner of status change:', notifyErr);
+        }
+      }
+
       return { success: true };
     } catch (e) {
-      throw new AppError(e.message || 'Failed to update tracking step', 500);
+      if (e instanceof AppError) throw e;
+      throw new AppError(e.message || 'Failed to update status', 500);
     }
   },
 
@@ -400,7 +431,7 @@ const adminService = {
               });
             }
           } catch (error) {
-            console.warn(`Failed to download photo ${i + 1}:`, error.message);
+            logger.warn(`Failed to download photo ${i + 1}:`, error.message);
           }
         }
       }
@@ -426,7 +457,7 @@ const adminService = {
               });
             }
           } catch (error) {
-            console.warn(`Failed to download document ${i + 1}:`, error.message);
+            logger.warn(`Failed to download document ${i + 1}:`, error.message);
           }
         }
       }
@@ -436,7 +467,7 @@ const adminService = {
       return { folderName, zipStream };
 
     } catch (e) {
-      console.error("Error in downloadPropertyAsZip:", e);
+      logger.error("Error in downloadPropertyAsZip:", e);
       throw new AppError(`Failed to create property zip: ${e.message}`, 500);
     }
   },

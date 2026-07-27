@@ -1,3 +1,4 @@
+const logger = require("firebase-functions/logger");
 const { db } = require("../config/db");
 const AppError = require("../utils/AppError")
 
@@ -67,7 +68,7 @@ const userService = {
 
             return transactions;
         } catch (error) {
-            console.log("Error fetching transactions:", error);
+            logger.error("Error fetching transactions:", error);
             throw new AppError(error.message || "Failed to fetch transactions", 500);
         }
     },

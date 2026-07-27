@@ -1,11 +1,191 @@
 const path = require('path');
+const logger = require("firebase-functions/logger");
 const { getStepsForListing } = require("../data/progressTrackerSteps")
 const { db, storage } = require("../config/db");
 const AppError = require("../utils/AppError");
 const { FieldValue } = require('firebase-admin/firestore');
-const { STATIC_STEPS } = require('../data/progressTrackerSteps')
 const { ADDONS_BY_ID } = require('../data/addons')
-const { projectStateToProperty } = require('../utils/projectListingState');
+const actionService = require('./actionService')
+const EDITABLE_STATUSES = new Set(['initiated', 'draft']);
+
+const MEDIA_LIMITS = {
+    photos: {
+        mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+        maxBytes: 15 * 1024 * 1024,
+        maxFiles: 50,
+    },
+    attachments: {
+        mimeTypes: [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'image/jpeg',
+            'image/png',
+        ],
+        maxBytes: 20 * 1024 * 1024,
+        maxFiles: 15,
+    },
+};
+
+/** Throws 404/403 unless `uid` owns `listingId`. Skip entirely for admin-initiated calls. */
+async function assertListingOwnership(listingId, uid) {
+    const snap = await db.collection('properties').doc(listingId).get();
+    if (!snap.exists) throw new AppError('Property not found', 404);
+    if (snap.data().ownerId !== uid) throw new AppError('Unauthorized access to this property', 403);
+}
+
+function occupancyFromBe(occupancyType) {
+    if (occupancyType === 'owner_occupied') return 'owner';
+    if (occupancyType === 'tenant_occupied') return 'tenant';
+    if (occupancyType === 'vacant') return 'vacant';
+    return null;
+}
+
+/** Flat listing-process fields stored once on the property root (no flowState). */
+const PROCESS_FIELD_KEYS = [
+    'listedWithOtherBrokerage',
+    'supportTier',
+    'occupancy',
+    'propertyType',
+    'askingPrice',
+    'selectedAddons',
+    'walkthroughAnswers',
+    'sellerContact',
+    'ownership',
+    'mailingAddress',
+    'propertyDetails',
+    'featuresUpgrades',
+    'buyerCopy',
+    'sellerConfirmations',
+];
+
+/** Intermediate step-group keys to delete after migrating to flat. */
+const STEP_GROUP_KEYS = [
+    'getStarted',
+    'sellingStyle',
+    'basicDetail',
+    'tellBuyers',
+    'beforeLive',
+    'reviewListing',
+];
+
+function isStepGroupedState(state) {
+    if (!state || typeof state !== 'object') return false;
+    return STEP_GROUP_KEYS.some((k) => state[k] != null && typeof state[k] === 'object');
+}
+
+function isFlatProcessState(state) {
+    if (!state || typeof state !== 'object') return false;
+    // Flat if any process field is present and we're not in step-group shape
+    if (isStepGroupedState(state)) return false;
+    return PROCESS_FIELD_KEYS.some((k) => k in state);
+}
+
+/** Unwrap step-grouped wire → flat process fields. */
+function unwrapStepGroupsToFlat(grouped) {
+    if (!grouped || typeof grouped !== 'object') return {};
+    const out = {};
+    if (typeof grouped.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = grouped.furthestMajorIndex;
+    }
+    if (grouped.getStarted) {
+        out.listedWithOtherBrokerage = grouped.getStarted.listedWithOtherBrokerage ?? null;
+    }
+    if (grouped.sellingStyle) {
+        out.supportTier = grouped.sellingStyle.supportTier ?? null;
+        out.walkthroughAnswers = grouped.sellingStyle.walkthroughAnswers ?? {};
+    }
+    if (grouped.basicDetail) {
+        out.occupancy = grouped.basicDetail.occupancy ?? null;
+        out.sellerContact = grouped.basicDetail.sellerContact ?? {};
+        out.ownership = grouped.basicDetail.ownership ?? {};
+        out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
+    }
+    if (grouped.propertyDetails && typeof grouped.propertyDetails === 'object') {
+        const { propertyType, askingPrice, ...rest } = grouped.propertyDetails;
+        out.propertyDetails = rest;
+        if (propertyType !== undefined) out.propertyType = propertyType;
+        if (askingPrice !== undefined) out.askingPrice = askingPrice;
+    }
+    if (grouped.featuresUpgrades != null) out.featuresUpgrades = grouped.featuresUpgrades;
+    if (grouped.tellBuyers != null) out.buyerCopy = grouped.tellBuyers;
+    if (grouped.beforeLive?.selectedAddons != null) {
+        out.selectedAddons = grouped.beforeLive.selectedAddons;
+    }
+    if (grouped.reviewListing != null) out.sellerConfirmations = grouped.reviewListing;
+    return out;
+}
+
+/** Normalize incoming PATCH state (flat, step-grouped, or legacy flowState blob) → flat. */
+function normalizeIncomingState(state) {
+    if (!state || typeof state !== 'object') return {};
+    if (isStepGroupedState(state)) return unwrapStepGroupsToFlat(state);
+    // Already flat (or legacy flat flowState contents)
+    const out = {};
+    if (typeof state.furthestMajorIndex === 'number') {
+        out.furthestMajorIndex = state.furthestMajorIndex;
+    }
+    for (const k of PROCESS_FIELD_KEYS) {
+        if (k in state) out[k] = state[k];
+    }
+    return out;
+}
+
+/** Assemble listing-process `state` from property root (flat preferred). */
+function assembleProcessState(prop) {
+    if (isFlatProcessState(prop)) {
+        const state = {};
+        if (typeof prop.furthestMajorIndex === 'number') {
+            state.furthestMajorIndex = prop.furthestMajorIndex;
+        }
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in prop) state[k] = prop[k];
+        }
+        // Prefer root selectedAddons; fall back to brief beforeLive window
+        if (!Array.isArray(state.selectedAddons) && Array.isArray(prop.beforeLive?.selectedAddons)) {
+            state.selectedAddons = prop.beforeLive.selectedAddons;
+        }
+        return state;
+    }
+    if (isStepGroupedState(prop)) {
+        return unwrapStepGroupsToFlat(prop);
+    }
+    if (prop.flowState && typeof prop.flowState === 'object') {
+        return normalizeIncomingState(prop.flowState);
+    }
+    return {};
+}
+
+/** selectedAddons at root; fall back to beforeLive (step-group window). */
+function getSelectedAddons(prop) {
+    if (Array.isArray(prop?.selectedAddons)) return prop.selectedAddons;
+    if (Array.isArray(prop?.beforeLive?.selectedAddons)) return prop.beforeLive.selectedAddons;
+    return [];
+}
+
+function isPlainObject(value) {
+    return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Deep-merge plain objects for listing-process nested fields.
+ * Arrays / scalars / null replace. Used so sparse nested PATCHes keep siblings.
+ */
+function deepMergePlainObjects(prev, next) {
+    if (!isPlainObject(next)) return next;
+    if (!isPlainObject(prev)) return { ...next };
+    const out = { ...prev };
+    for (const key of Object.keys(next)) {
+        const n = next[key];
+        const p = prev[key];
+        if (isPlainObject(n) && isPlainObject(p)) {
+            out[key] = deepMergePlainObjects(p, n);
+        } else {
+            out[key] = n;
+        }
+    }
+    return out;
+}
 
 const buildAddressName = (location) => {
     try {
@@ -23,7 +203,7 @@ const buildAddressName = (location) => {
         const municipality = location.municipality ?? null;
         return [parts, unit, municipality].filter(Boolean).join(', ');
     } catch (e) {
-        console.log(e)
+        logger.error(e)
     }
 }
 
@@ -128,51 +308,33 @@ const propertyService = {
                 return newListingId;
             }
         } catch (e) {
-            console.error("Error saving property:", e);
+            logger.error("Error saving property:", e);
             throw new AppError("Failed to save Property", 500);
         }
     },
 
     /**
      * STAGE 1 — Initiation.
-     * Creates properties/{id} + listingProcesses/{id}. occupancyType optional.
+     * Creates properties/{id}. Optional occupancy seeds flat occupancy field.
      */
     initiateProperty: async (userId, body = {}) => {
         const { occupancyType } = body || {};
         try {
+            const occupancy = occupancyFromBe(occupancyType);
             const propertyData = {
                 ownerId: userId,
                 status: 'initiated',
                 paid: false,
+                furthestMajorIndex: 0,
                 createdAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             };
             if (occupancyType) propertyData.occupancyType = occupancyType;
 
             const listingRef = await db.collection('properties').add(propertyData);
-            const listingId = listingRef.id;
-
-            await db.collection('listingProcesses').doc(listingId).set({
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: 0,
-                state: occupancyType
-                    ? {
-                        occupancy:
-                            occupancyType === 'owner_occupied'
-                                ? 'owner'
-                                : occupancyType === 'tenant_occupied'
-                                    ? 'tenant'
-                                    : 'vacant',
-                    }
-                    : {},
-                createdAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-
-            return listingId;
+            return listingRef.id;
         } catch (e) {
-            console.error("Error initiating property:", e);
+            logger.error("Error initiating property:", e);
             throw new AppError("Failed to initiate property", 500);
         }
     },
@@ -206,14 +368,13 @@ const propertyService = {
         const data = procSnap.data();
         return {
             listingId,
-            furthestMajorIndex: data.furthestMajorIndex ?? 0,
-            state: data.state || {},
+            state: assembleProcessState(prop),
             propertyStatus: prop.status,
-            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+            updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
         };
     },
 
-    saveListingProcess: async (userId, listingId, { furthestMajorIndex, state }) => {
+    saveListingProcess: async (userId, listingId, { state }) => {
         const propRef = db.collection('properties').doc(listingId);
         const propSnap = await propRef.get();
         if (!propSnap.exists) throw new AppError('Property not found', 404);
@@ -223,59 +384,51 @@ const propertyService = {
             throw new AppError('Cannot edit a listing that has already been submitted', 409);
         }
 
-        const procRef = db.collection('listingProcesses').doc(listingId);
-        const procSnap = await procRef.get();
-        const prev = procSnap.exists ? procSnap.data() : {
-            ownerId: userId,
-            listingId,
-            furthestMajorIndex: 0,
-            state: {},
-        };
+        const incoming = state != null ? normalizeIncomingState(state) : {};
+        const prev = assembleProcessState(prop);
 
-        const nextState =
-            state != null
-                ? { ...(prev.state || {}), ...state }
-                : prev.state || {};
-        const nextIndex =
-            typeof furthestMajorIndex === 'number'
-                ? Math.max(prev.furthestMajorIndex ?? 0, furthestMajorIndex)
-                : prev.furthestMajorIndex ?? 0;
-
-        await procRef.set(
-            {
-                ownerId: userId,
-                listingId,
-                furthestMajorIndex: nextIndex,
-                state: nextState,
-                updatedAt: FieldValue.serverTimestamp(),
-                ...(procSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-            },
-            { merge: true }
-        );
-
-        const propertyPatch = projectStateToProperty(nextState);
-        const hasPatch = Object.keys(propertyPatch).length > 0;
-        if (hasPatch || Object.keys(nextState).length > 0) {
-            await propRef.update({
-                ...propertyPatch,
-                status: prop.status === 'initiated' ? 'draft' : prop.status,
-                updatedAt: FieldValue.serverTimestamp(),
-            });
+        const nextState = { ...prev };
+        if (typeof incoming.furthestMajorIndex === 'number') {
+            nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
         }
+        // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in incoming) {
+                nextState[k] = deepMergePlainObjects(prev[k], incoming[k]);
+            }
+        }
+
+        const nextStatus = prop.status === 'initiated' ? 'draft' : prop.status;
+        const update = {
+            status: nextStatus,
+            updatedAt: FieldValue.serverTimestamp(),
+            flowState: FieldValue.delete(),
+        };
+        // Clear intermediate step-group keys
+        for (const k of STEP_GROUP_KEYS) {
+            update[k] = FieldValue.delete();
+        }
+
+        if (typeof nextState.furthestMajorIndex === 'number') {
+            update.furthestMajorIndex = nextState.furthestMajorIndex;
+        }
+        for (const k of PROCESS_FIELD_KEYS) {
+            if (k in nextState) update[k] = nextState[k];
+        }
+
+        await propRef.update(update);
 
         return {
             listingId,
-            furthestMajorIndex: nextIndex,
             state: nextState,
-            propertyStatus: hasPatch && prop.status === 'initiated' ? 'draft' : prop.status,
+            propertyStatus: nextStatus,
         };
     },
 
     getOwnerMostRecentProcess: async (userId) => {
         try {
-            // Avoid composite index: filter by owner, sort in memory
             const snapshot = await db
-                .collection('listingProcesses')
+                .collection('properties')
                 .where('ownerId', '==', userId)
                 .get();
 
@@ -292,16 +445,12 @@ const propertyService = {
                 .sort((a, b) => b.updatedAt - a.updatedAt);
 
             for (const { id, data } of docs) {
-                const propSnap = await db.collection('properties').doc(id).get();
-                if (!propSnap.exists) continue;
-                const status = propSnap.data().status;
-                if (status === 'submitted' || status === 'active' || status === 'closed') continue;
+                if (!EDITABLE_STATUSES.has(data.status)) continue;
                 return {
                     process: {
                         listingId: id,
-                        furthestMajorIndex: data.furthestMajorIndex ?? 0,
-                        state: data.state || {},
-                        propertyStatus: status,
+                        state: assembleProcessState(data),
+                        propertyStatus: data.status,
                         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
                     },
                 };
@@ -309,7 +458,7 @@ const propertyService = {
 
             return { process: null };
         } catch (e) {
-            console.error('Error in getOwnerMostRecentProcess:', e);
+            logger.error('Error in getOwnerMostRecentProcess:', e);
             throw new AppError(`Failed to fetch most recent listing process: ${e.message}`, 500);
         }
     },
@@ -355,7 +504,7 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
-            console.error("Error saving draft field:", e);
+            logger.error("Error saving draft field:", e);
             throw new AppError("Failed to save field", 500);
         }
 
@@ -374,25 +523,72 @@ const propertyService = {
                 submittedAt: FieldValue.serverTimestamp(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
+
+            let data;
+            try {
+                const snap = await docRef.get();
+                data = snap.data();
+                if (data?.ownerId) {
+                    await notificationService.createNotification({
+                        userId: data.ownerId,
+                        type: 'status_change',
+                        severity: 'success',
+                        title: 'Listing submitted',
+                        message: 'Your listing has been submitted and is now being reviewed.',
+                        listingId,
+                        listingAddress: buildAddressName(data.location || {}),
+                        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+                        actionLabel: 'View Listing',
+                        sendEmail: false,
+                    });
+                }
+            } catch (notifyErr) {
+                logger.error('[notif] Failed to notify owner of listing submission:', notifyErr);
+            }
+
+            try {
+                await actionService.generateActionsForListing(listingId, data ?? (await docRef.get()).data());
+            } catch (actionErr) {
+                logger.error('[actions] Failed to generate actions for listing:', actionErr);
+            }
         } catch (e) {
-            console.error("Error marking property submitted:", e);
+            logger.error("Error marking property submitted:", e);
         }
     },
 
     /**
      * Uploads photos or attachments to Firebase Storage for a given listing
      * - Validates mediaType is either 'photos' or 'attachments'
+     * - Verifies the requester owns the listing (skipped for admin calls)
+     * - Validates each file's mime type and size against MEDIA_LIMITS
      * - Uploads each file to Storage under listingId/mediaType/
      * - Generates a long-lived signed URL for each file
      * - Appends uploaded file metadata to the listing's media array in Firestore
      */
-    uploadMedia: async (listingId, files, mediaType) => {
+    uploadMedia: async (listingId, files, mediaType, { uid, isAdmin, category } = {}) => {
 
         if (!['photos', 'attachments'].includes(mediaType)) {
             throw new AppError("Invalid media type", 400);
         }
         if (!files || files.length === 0) {
             throw new AppError("No files received", 400);
+        }
+
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
+        }
+
+        const limits = MEDIA_LIMITS[mediaType];
+        if (files.length > limits.maxFiles) {
+            throw new AppError(`You can upload at most ${limits.maxFiles} files at a time`, 400);
+        }
+        for (const file of files) {
+            if (!limits.mimeTypes.includes(file.mimetype)) {
+                throw new AppError(`"${file.originalname}" is not an accepted file type for ${mediaType}`, 400);
+            }
+            if (file.buffer.length > limits.maxBytes) {
+                throw new AppError(`"${file.originalname}" is too large (max ${limits.maxBytes / (1024 * 1024)}MB)`, 400);
+            }
         }
 
         const mediaUrls = [];
@@ -417,6 +613,7 @@ const propertyService = {
                     url,
                     fileName: file.originalname,
                     uploadedAt: new Date(),
+                    category: mediaType === 'attachments' ? (category ?? null) : null,
                 });
             }
 
@@ -425,6 +622,11 @@ const propertyService = {
                 updatedAt: FieldValue.serverTimestamp(),
             });
 
+            try {
+                await actionService.completeUploadAction(listingId, mediaType);
+            } catch (actionErr) {
+                logger.error('[actions] Failed to auto-complete upload action:', actionErr);
+            }
 
         } catch (firebaseErr) {
             throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
@@ -433,9 +635,13 @@ const propertyService = {
         return mediaUrls;
     },
 
-    removeMedia: async (listingId, mediaType, mediaUrl) => {
+    removeMedia: async (listingId, mediaType, mediaUrl, { uid, isAdmin } = {}) => {
         if (!['photos', 'attachments'].includes(mediaType)) {
             throw new AppError("Invalid media type", 400);
+        }
+
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
         }
 
         const docRef = db.collection('properties').doc(listingId);
@@ -460,7 +666,7 @@ const propertyService = {
                 await storage.file(filePath).delete();
             }
         } catch (e) {
-            console.error("Storage deletion failed (non-critical):", e.message);
+            logger.error("Storage deletion failed (non-critical):", e.message);
         }
     },
 
@@ -503,7 +709,7 @@ const propertyService = {
             };
 
         } catch (e) {
-            console.error("Error in getListing:", e);
+            logger.error("Error in getListing:", e);
             throw new AppError(`Failed to fetch listing: ${e.message}`, 500);
         }
     },
@@ -524,21 +730,25 @@ const propertyService = {
 
             return properties;
         } catch (e) {
-            console.error("Error in getOwnerProperty:", e);
+            logger.error("Error in getOwnerProperty:", e);
             throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
         }
     },
 
-    reorderMedia: async (listingId, mediaType, urls) => {
+    reorderMedia: async (listingId, mediaType, urls, { uid, isAdmin } = {}) => {
         try{
             if (!['photos', 'attachments'].includes(mediaType)) {
                 throw new AppError('Invalid media type', 400);
             }
-            
+
             if (!Array.isArray(urls) || urls.length === 0) {
                 throw new AppError('urls must be a non-empty array', 400);
             }
-        
+
+            if (!isAdmin) {
+                await assertListingOwnership(listingId, uid);
+            }
+
             const docRef = db.collection('properties').doc(listingId);
             const snap   = await docRef.get();
         
@@ -563,8 +773,26 @@ const propertyService = {
         
             return finalMedia;
         }catch(e){
+            if (e instanceof AppError) throw e;
             throw new AppError(e.message || "Failed to reorder media", 500);
         }
+    },
+
+    setVirtualTourLink: async (listingId, url, { uid, isAdmin } = {}) => {
+        if (!isAdmin) {
+            await assertListingOwnership(listingId, uid);
+        }
+
+        const docRef = db.collection('properties').doc(listingId);
+        const snap = await docRef.get();
+        if (!snap.exists) throw new AppError('Property not found', 404);
+
+        await docRef.update({
+            'media.virtualTourLink': url || null,
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+
+        return url || null;
     },
 
     getOwnerMostRecentProperty: async (uid) => {
@@ -607,7 +835,7 @@ const propertyService = {
                 stats,
             };
         } catch (e) {
-            console.error("Error in getOwnerMostRecentProperty:", e);
+            logger.error("Error in getOwnerMostRecentProperty:", e);
             throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
         }
     },
@@ -622,7 +850,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -634,7 +862,7 @@ const propertyService = {
             });
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error marking step completed:", e);
+            logger.error("Error marking step completed:", e);
             throw new AppError(`Failed to mark step as completed: ${e.message}`, 500);
         }
     },
@@ -649,7 +877,7 @@ const propertyService = {
             }
 
             const data = snap.data();
-            const validStepIds = getStepsForListing(data.selectedAddons ?? []).map((s) => s.id);
+            const validStepIds = getStepsForListing(getSelectedAddons(data)).map((s) => s.id);
 
             if (!validStepIds.includes(stepKey)) {
                 throw new AppError(`"${stepKey}" is not a valid step for this listing`, 400);
@@ -661,11 +889,16 @@ const propertyService = {
             });
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error marking step incomplete:", e);
+            logger.error("Error marking step incomplete:", e);
             throw new AppError(`Failed to mark step as incomplete: ${e.message}`, 500);
         }
     },
 
+    /**
+     * uid is the caller's own uid for the seller-facing route (ownership
+     * enforced); pass null for the admin route, which is already gated by
+     * verifyAdminFirebaseToken and needs to read any listing.
+     */
     getProgressTracker: async (uid, listingId) => {
         try {
             const docRef = db.collection('properties').doc(listingId);
@@ -677,19 +910,14 @@ const propertyService = {
 
             const data = docSnap.data();
 
-            if (data.ownerId !== uid) {
+            if (uid && data.ownerId !== uid) {
                 throw new AppError("Unauthorized access to this property", 403);
             }
 
             const completedSteps = data.progressTracker?.completedSteps ?? {};
-            const selectedAddons = data.selectedAddons ?? [];
+            const selectedAddons = getSelectedAddons(data);
 
-            const dynamicSteps = selectedAddons
-                .map((addonId) => ADDONS_BY_ID[addonId])
-                .filter(Boolean)
-                .map((addon) => ({ id: addon.id, label: addon.label }));
-
-            const steps = [...STATIC_STEPS, ...dynamicSteps].map((step) => {
+            const steps = getStepsForListing(selectedAddons).map((step) => {
                 const completedAt = completedSteps[step.id];
                 return {
                     id: step.id,
@@ -710,7 +938,7 @@ const propertyService = {
 
         } catch (e) {
             if (e instanceof AppError) throw e;
-            console.error("Error in getProgressTracker:", e);
+            logger.error("Error in getProgressTracker:", e);
             throw new AppError(`Failed to fetch progress tracker: ${e.message}`, 500);
         }
     },
@@ -750,10 +978,11 @@ const propertyService = {
         try {
             await docRef.update({
                 selectedAddons,
+                beforeLive: FieldValue.delete(),
                 updatedAt: FieldValue.serverTimestamp(),
             });
         } catch (e) {
-            console.error("Error saving selected addons:", e);
+            logger.error("Error saving selected addons:", e);
             throw new AppError("Failed to save selected addons", 500);
         }
 

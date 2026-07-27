@@ -30,35 +30,47 @@ const propertyController = {
 
     uploadMedia: asyncErrorHandler( async (req, res) => {
         const { listingId, mediaType } = req.params;
+        const isAdmin = Boolean(req.user?.ifAdmin);
+        const uid = req.user?.uid;
 
-        const busboy = Busboy({ headers: req.headers });
+        const busboy = Busboy({ headers: req.headers, limits: { fileSize: 20 * 1024 * 1024, files: 25 } });
         const files = [];
+        let tooLarge = false;
+        let category = null;
 
-        busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
-            if (!files[fieldname]) files[fieldname] = [];
+        busboy.on("field", (fieldname, val) => {
+            if (fieldname === "category") category = val;
+        });
 
+        busboy.on("file", (fieldname, file, info) => {
+            const { filename, mimeType } = info;
             const bufferParts = [];
             file.on("data", (data) => bufferParts.push(data));
+            file.on("limit", () => {
+                tooLarge = true;
+            });
             file.on("end", () => {
                 files.push({
                     originalname: filename,
                     buffer: Buffer.concat(bufferParts),
-                    mimetype,
+                    mimetype: mimeType,
                 });
             });
         });
 
         busboy.on("finish", async () => {
-
+            if (tooLarge) {
+                return res.status(400).json({ error: "One or more files exceeded the maximum upload size" });
+            }
             if (!files || files.length === 0) {
                 return res.status(400).json({ error: "No files uploaded" });
             }
 
             try {
-                const urls = await propertyService.uploadMedia(listingId, files, mediaType);
+                const urls = await propertyService.uploadMedia(listingId, files, mediaType, { uid, isAdmin, category });
                 res.status(200).json({ media: urls });
             } catch (err) {
-                res.status(500).json({ error: err.message || "Upload failed" });
+                res.status(err.statusCode || 500).json({ error: err.message || "Upload failed" });
             }
         });
 
@@ -68,25 +80,39 @@ const propertyController = {
     removeMedia: asyncErrorHandler(async (req, res) => {
         const { listingId, mediaType } = req.params;
         const { url } = req.query;
+        const isAdmin = Boolean(req.user?.ifAdmin);
+        const uid = req.user?.uid;
 
         if (!url) {
             return res.status(400).json({ error: "Missing url in request body" });
         }
 
-        await propertyService.removeMedia(listingId, mediaType, url);
+        await propertyService.removeMedia(listingId, mediaType, url, { uid, isAdmin });
         res.status(200).json({ success: true });
     }),
 
     reorderMedia: asyncErrorHandler(async (req, res) => {
         const { listingId, mediaType } = req.params;
         const { urls } = req.body;
+        const isAdmin = Boolean(req.user?.ifAdmin);
+        const uid = req.user?.uid;
 
         if (!Array.isArray(urls) || urls.length === 0) {
             return res.status(400).json({ error: "urls must be a non-empty array" });
         }
 
-        const media = await propertyService.reorderMedia(listingId, mediaType, urls);
+        const media = await propertyService.reorderMedia(listingId, mediaType, urls, { uid, isAdmin });
         res.status(200).json({ success: true, media });
+    }),
+
+    setVirtualTourLink: asyncErrorHandler(async (req, res) => {
+        const { listingId } = req.params;
+        const { url } = req.body;
+        const isAdmin = Boolean(req.user?.ifAdmin);
+        const uid = req.user?.uid;
+
+        const virtualTourLink = await propertyService.setVirtualTourLink(listingId, url, { uid, isAdmin });
+        res.status(200).json({ success: true, virtualTourLink });
     }),
 
     stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
@@ -139,6 +165,7 @@ const propertyController = {
 
     getProgressTracker: asyncErrorHandler(async (req, res) => {
         const result = await propertyService.getProgressTracker(req.user.uid, req.params.listingId)
+        res.status(200).json(result)
     })
 }
 

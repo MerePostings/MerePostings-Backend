@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('firebase-functions/logger');
 const stripe = require('../config/stripe')
 const { db } = require("../config/db");
 const { sendPaymentConfirmationEmail } = require('../services/mailService');
@@ -7,13 +8,13 @@ const { markSubmitted } = require('../services/propertyService');
 const { FieldValue } = require('firebase-admin/firestore');
 const { addTransaction } = require('../services/stripeService');
 
-router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req, res) =>{
+router.post('/stripe-webhook', async(req, res) =>{
     const sig = req.headers["stripe-signature"];
 
     try{
         const event = stripe.webhooks.constructEvent(req.rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
 
-        console.log(event.type);
+        logger.info(event.type);
 
         switch(event.type) {
 
@@ -28,7 +29,7 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
                     const { listingId, firstName, userEmail, customerId } = session.metadata;
 
                     if (!listingId) {
-                        console.error("No listingId in metadata");
+                        logger.error("No listingId in metadata");
                         return res.json({ received: true });
                     }
     
@@ -40,18 +41,19 @@ router.post('/stripe-webhook',express.raw({type: "application/json"}), async(req
                     await sendPaymentConfirmationEmail(userEmail, firstName, session.amount / 100, listingLink);
                     await addTransaction(customerId, session.amount / 100, session.id, "" ,"processed", "one-time", 1, listingId)
                 }catch(e){
-                 console.log(e)   
+                 logger.error(e)
                 }
-
+                break;
             }
 
             default:
-                console.log("Unhandled event type:", event.type);
+                logger.info("Unhandled event type:", event.type);
                 
         }
         res.json({received:true});
     }catch(e){
-        console.error(`Webhook error for event :`, e);
+        logger.error(`Webhook error for event :`, e);
+        res.status(400).json({ error: e.message });
     }
 })
 
