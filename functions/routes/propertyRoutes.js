@@ -80,11 +80,11 @@ router.post(
 );
 
 // LEGACY — kept for backward compatibility, see propertyController.addProperty
-router.post(
-    "/add-property",
-    verifyFirebaseToken,
-    propertyController.addProperty,
-);
+// router.post(
+//     "/add-property",
+//     verifyFirebaseToken,
+//     propertyController.addProperty,
+// );
 
 router.post(
     "/:listingId/media/:mediaType",
