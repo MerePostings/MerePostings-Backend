@@ -4,39 +4,33 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const {
-    listActionsQuerySchema, schedulingPreferenceSchema,
+  listActionsQuerySchema, schedulingBatchSchema,
 } = require("../validators/action/schemas.js");
 
 router.get(
     "/",
     verifyFirebaseToken,
-    validate(listActionsQuerySchema, 'query'),
-    actionController.listActions
+    validate(listActionsQuerySchema, "query"),
+    actionController.listActions,
 );
 
 router.get(
     "/:id",
     verifyFirebaseToken,
-    actionController.getAction
+    actionController.getAction,
 );
 
 router.patch(
     "/:id/schedule-request",
     verifyFirebaseToken,
-    validate(schedulingPreferenceSchema),
-    actionController.submitSchedulingPreference
-);
-
-router.patch(
-    "/:id/confirm-time",
-    verifyFirebaseToken,
-    actionController.confirmScheduledTime
+    validate(schedulingBatchSchema),
+    actionController.submitSchedulingBatch,
 );
 
 router.get(
     "/:id/calendar.ics",
     verifyFirebaseToken,
-    actionController.downloadCalendarEvent
+    actionController.downloadCalendarEvent,
 );
 
 module.exports = router;

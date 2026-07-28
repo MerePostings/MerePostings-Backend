@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
   test:
@@ -20,9 +20,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
       - run: npm ci
-      # `npm run lint` is intentionally not run here yet: the existing codebase
-      # has thousands of pre-existing ESLint violations (mostly CRLF line
-      # endings) unrelated to this test suite, so gating CI on it today would
-      # make this workflow permanently fail for reasons this PR didn't cause.
-      # Re-add once that pre-existing debt gets cleaned up in its own pass.
-      - run: npm test
+      - run: npm run lint
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: functions/coverage/
+          retention-days: 14
+      # Report-only for now: surfaces known vulnerabilities in the PR/run
+      # without blocking merges on them. Revisit as `audit-level=high` (or
+      # stricter) once the current backlog has been triaged.
+      - run: npm audit --audit-level=high || true

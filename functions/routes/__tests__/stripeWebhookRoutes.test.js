@@ -5,6 +5,7 @@ jest.mock("../../services/stripeService");
 
 const express = require("express");
 const request = require("supertest");
+const logger = require("firebase-functions/logger");
 const stripe = require("../../config/stripe");
 const {sendPaymentConfirmationEmail} = require("../../services/mailService");
 const {markSubmitted} = require("../../services/propertyService");
@@ -104,19 +105,30 @@ describe("POST /v1/webhook/stripe-webhook", () => {
     expect(addTransaction).not.toHaveBeenCalled();
   });
 
-  // Documents current behavior: no `break` after the case means execution
-  // always falls through into `default:` and logs "Unhandled event type:",
-  // even on a successful payment_intent.succeeded. Cosmetic, not fixed here.
-  test("logs 'Unhandled event type:' even on a successful payment_intent.succeeded (known fallthrough)", async () => {
+  // The `break` after the payment_intent.succeeded case means the switch
+  // does NOT fall through to `default:`, so "Unhandled event type:" is only
+  // ever logged for event types that aren't explicitly handled.
+  test("does not log 'Unhandled event type:' for a handled payment_intent.succeeded", async () => {
     stripe.webhooks.constructEvent.mockReturnValueOnce(baseEvent);
     markSubmitted.mockResolvedValueOnce(undefined);
     sendPaymentConfirmationEmail.mockResolvedValueOnce(undefined);
     addTransaction.mockResolvedValueOnce(undefined);
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = jest.spyOn(logger, "info").mockImplementation(() => {});
 
     await post(buildApp(), baseEvent);
 
-    expect(logSpy).toHaveBeenCalledWith("Unhandled event type:", "payment_intent.succeeded");
+    expect(logSpy).not.toHaveBeenCalledWith("Unhandled event type:", "payment_intent.succeeded");
+    logSpy.mockRestore();
+  });
+
+  test("logs 'Unhandled event type:' for an event type with no explicit case", async () => {
+    const event = {...baseEvent, type: "charge.refunded"};
+    stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    const logSpy = jest.spyOn(logger, "info").mockImplementation(() => {});
+
+    await post(buildApp(), event);
+
+    expect(logSpy).toHaveBeenCalledWith("Unhandled event type:", "charge.refunded");
     logSpy.mockRestore();
   });
 

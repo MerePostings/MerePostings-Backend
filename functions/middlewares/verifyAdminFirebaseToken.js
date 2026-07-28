@@ -1,15 +1,16 @@
+const logger = require("firebase-functions/logger");
 const firebaseAdmin = require("../config/firebaseAdmin");
-const { db } = require("../config/db");
+const {db} = require("../config/db");
 
 const verifyFirebaseToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.split("Bearer ")[1]
-      : null;
+    const token = authHeader.startsWith("Bearer ") ?
+      authHeader.split("Bearer ")[1] :
+      null;
 
     if (!token) {
-      return res.status(401).json({ error: "No token provided" });
+      return res.status(401).json({error: "No token provided"});
     }
 
     const decodedToken = await firebaseAdmin.auth().verifyIdToken(token);
@@ -17,12 +18,12 @@ const verifyFirebaseToken = async (req, res, next) => {
     const docRef = db.collection("users").doc(decodedToken.uid);
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      return res.status(401).json({ error: "User not found" });
+      return res.status(401).json({error: "User not found"});
     }
 
     const userData = docSnap.data();
     if (!userData.ifAdmin) {
-      return res.status(403).json({ error: "Forbidden: Admins only" });
+      return res.status(403).json({error: "Forbidden: Admins only"});
     }
 
     req.user = {
@@ -32,8 +33,8 @@ const verifyFirebaseToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Firebase Auth error:", error.message);
-    return res.status(401).json({ error: "Unauthorized" });
+    logger.error("Firebase Auth error:", error.message);
+    return res.status(401).json({error: "Unauthorized"});
   }
 };
 

@@ -9,10 +9,10 @@
  *   outer field name the client sent.
  */
 const formatJoiError = (error, fieldNameOverride) => {
-    return error.details.map((detail) => ({
-        field: fieldNameOverride || detail.path.join('.'),
-        message: detail.message,
-    }));
+  return error.details.map((detail) => ({
+    field: fieldNameOverride || detail.path.join("."),
+    message: detail.message,
+  }));
 };
 
 module.exports = formatJoiError;
