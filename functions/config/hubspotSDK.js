@@ -1,6 +1,6 @@
-require('dotenv').config({ path: '.env' });
-const hubspot = require('@hubspot/api-client');
-const OBJECTS_LIMIT = 100;
+require("dotenv").config({path: ".env"});
+const logger = require("firebase-functions/logger");
+const hubspot = require("@hubspot/api-client");
 
 const hubspotClient = new hubspot.Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -10,16 +10,16 @@ const hubspotClient = new hubspot.Client({
 const findContactByEmail = async (email) => {
   try {
     const filter = {
-      propertyName: 'email',
-      operator: 'EQ',
+      propertyName: "email",
+      operator: "EQ",
       value: email,
     };
 
-    const filterGroup = { filters: [filter] };
+    const filterGroup = {filters: [filter]};
 
     const publicObjectSearchRequest = {
       filterGroups: [filterGroup],
-      properties: ['email'],
+      properties: ["email"],
       limit: 1,
     };
 
@@ -27,12 +27,12 @@ const findContactByEmail = async (email) => {
     const results = searchResponse?.results;
 
     if (results && results.length > 0) {
-      return results[0]; 
+      return results[0];
     }
 
     return null;
   } catch (error) {
-    console.log(error)
+    logger.error(error);
     return null;
   }
 };
@@ -40,16 +40,16 @@ const findContactByEmail = async (email) => {
 
 const createContactIfNotExists = async (properties) => {
   const email = properties.email;
-  if (!email) throw new Error('Email is required to check for duplicates.');
+  if (!email) throw new Error("Email is required to check for duplicates.");
 
   const existingContact = await findContactByEmail(email);
   if (existingContact) {
-    console.log('Contact already exists with ID:', existingContact.id);
+    logger.info("Contact already exists with ID:", existingContact.id);
     return existingContact.id;
   }
 
-const response = await hubspotClient.crm.contacts.basicApi.create({ properties });
-return response.id;
+  const response = await hubspotClient.crm.contacts.basicApi.create({properties});
+  return response.id;
 };
 
-module.exports= {createContactIfNotExists}
+module.exports= {createContactIfNotExists};

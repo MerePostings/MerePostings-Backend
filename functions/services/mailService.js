@@ -3,9 +3,9 @@ const postmark = require("postmark");
 const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
 
 const sendVerificationEmail = async (
-  email,
-  emailVerificationLink,
-  firstName
+    email,
+    emailVerificationLink,
+    firstName,
 ) => {
   client.sendEmail({
     from: `${process.env.EMAILUSER}`,
@@ -260,15 +260,15 @@ const sendVerificationEmail = async (
           </div>
           </body>
       </html>`,
-      MessageStream: "notifications"
-    });
+    MessageStream: "notifications",
+  });
 };
 
 const sendPaymentConfirmationEmail = async (
-  email,
-  firstName,
-  amountPaid,
-  listingLink
+    email,
+    firstName,
+    amountPaid,
+    listingLink,
 ) => {
   client.sendEmail({
     from: `${process.env.EMAILUSER}`,
@@ -525,8 +525,8 @@ const sendPaymentConfirmationEmail = async (
           </div>
           </body>
       </html>`,
-      MessageStream: "notifications"
-    });
+    MessageStream: "notifications",
+  });
 };
 
 const meetingScheduled = async (email, name, date, time, link) => {
@@ -970,6 +970,12 @@ const contactMessage = async (name, email, message) => {
  
 </body>
 </html>`,
+const sendNotificationEmail = async (email, subject, htmlBody) => {
+  await client.sendEmail({
+    From: process.env.EMAILUSER,
+    To: email,
+    Subject: subject,
+    HtmlBody: htmlBody,
     MessageStream: "notifications",
   });
 };
@@ -981,4 +987,6 @@ module.exports = {
   guestMeetingRequest,
   callbackRequest,
   contactMessage
+  sendNotificationEmail,
+  client,
 };
