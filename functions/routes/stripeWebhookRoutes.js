@@ -16,9 +16,9 @@ router.post("/stripe-webhook", async (req, res) =>{
 
     switch (event.type) {
       /**
-             * Payment Intent Succeeded
-             * Handles successful one-time payments, updates property document.
-             */
+       * Payment Intent Succeeded
+       * Handles successful one-time payments, updates property document.
+      */
       case "payment_intent.succeeded": {
         try {
           const session = event.data.object;

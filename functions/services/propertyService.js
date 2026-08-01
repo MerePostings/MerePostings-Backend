@@ -6,6 +6,7 @@ const {FieldValue} = require("firebase-admin/firestore");
 const {ADDONS_BY_ID} = require("../data/addons");
 const actionService = require("./actionService");
 const notificationService = require("./notificationService");
+const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
 
 const MEDIA_LIMITS = {
@@ -509,17 +510,29 @@ const propertyService = {
   markSubmitted: async (listingId) => {
     try {
       const docRef = db.collection("properties").doc(listingId);
-      await docRef.update({
-        status: "submitted",
-        paid: true,
-        submittedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
 
       let data;
       try {
         const snap = await docRef.get();
-        data = snap.data();
+        data = snap?.data?.();
+      } catch (fetchErr) {
+        logger.error("[vet] Failed to fetch listing before marking submitted:", fetchErr);
+      }
+
+      const update = {
+        status: "submitted",
+        paid: true,
+        submittedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      if (data) {
+        const vetted = vetPropertyTypeFields(data.propertyType, data.propertyDetails, data.featuresUpgrades);
+        update.propertyDetails = vetted.propertyDetails;
+        update.featuresUpgrades = vetted.featuresUpgrades;
+      }
+      await docRef.update(update);
+
+      try {
         if (data?.ownerId) {
           await notificationService.createNotification({
             userId: data.ownerId,

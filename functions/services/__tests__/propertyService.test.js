@@ -145,6 +145,45 @@ describe("propertyService.markSubmitted", () => {
 
     expect(actionService.generateActionsForListing).toHaveBeenCalledWith("listing-1", propertyData);
   });
+
+  // Regression coverage for the stale-property-type-field bug: the FE
+  // listing-process save flow deep-merges propertyDetails/featuresUpgrades
+  // key-by-key with no concept of "this key belongs to duplex, not
+  // detached", so switching propertyType mid-draft leaves the old type's
+  // fields sitting in Firestore. markSubmitted is the one-time point where
+  // that gets cleaned up, in the same update call that sets status: submitted.
+  test("vets propertyDetails/featuresUpgrades against propertyType in the same update call", async () => {
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      data: () => ({
+        ownerId: "user-1",
+        propertyType: "detached",
+        propertyDetails: {bedrooms: 3, duplex: {unitCount: "duplex"}},
+        featuresUpgrades: {garage: "1_car", frontYardParking: "1_vehicle"},
+      }),
+    });
+
+    await propertyService.markSubmitted("listing-1");
+
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "submitted",
+          paid: true,
+          propertyDetails: {bedrooms: 3},
+          featuresUpgrades: {garage: "1_car"},
+        }),
+    );
+  });
+
+  test("does not add propertyDetails/featuresUpgrades to the update when the pre-fetch finds no data", async () => {
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    await propertyService.markSubmitted("listing-1");
+
+    const updateArg = dbRefs.docRef.update.mock.calls[0][0];
+    expect(updateArg).not.toHaveProperty("propertyDetails");
+    expect(updateArg).not.toHaveProperty("featuresUpgrades");
+  });
 });
 
 describe("propertyService.saveListingProcess", () => {
