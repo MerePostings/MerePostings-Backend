@@ -6,6 +6,7 @@ const archiver = require("archiver");
 const axios = require("axios");
 const {PassThrough} = require("stream");
 const notificationService = require("./notificationService");
+const {ACTION_TARGETS} = require("../data/actionTargets");
 
 const STATUS_SEVERITY = {draft: "info", pending: "info", active: "success", closed: "info"};
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
@@ -366,7 +367,8 @@ const adminService = {
             message: `Your listing status has been updated to "${humanizeStatus(status)}".`,
             listingId,
             listingAddress: addressParts.join(" ") || null,
-            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionTarget: ACTION_TARGETS.LISTING_DETAIL,
+            actionParams: {listingId},
             actionLabel: "View Listing",
           });
         } catch (notifyErr) {
