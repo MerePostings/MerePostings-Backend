@@ -22,6 +22,10 @@ const authService = {
         throw new AppError("Please fill in all of the required fields.", 400);
       }
 
+      if (termsAccepted !== true) {
+        throw new AppError("You must accept the Terms of Service to sign up.", 400);
+      }
+
       const issues = [];
       const SPECIAL = /[!@#$%^&*()_+\-=[\]{}|;:",./<>?]/;
 
@@ -71,11 +75,8 @@ const authService = {
         ...(marketingOptIn && {
           marketing: true,
         }),
-
-        ...(termsAccepted && {
-          termsVersion: 1,
-          acceptedDate: FieldValue.serverTimestamp(),
-        }),
+        termsVersion: 1,
+        acceptedDate: FieldValue.serverTimestamp(),
       });
 
       createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});
