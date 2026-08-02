@@ -45,7 +45,8 @@ const authService = {
         existingUser = await firebaseAdmin.auth().getUserByEmail(email);
       } catch (error) {
         if (error.code !== "auth/user-not-found") {
-          throw new AppError(error.message || "Failed to sign up. Please try agian.", error.statusCode || 500); // unexpected error
+          logger.error("[auth] Unexpected error checking for existing user:", error);
+          throw new AppError("Failed to sign up. Please try again.", 500); // unexpected error
         }
       }
 

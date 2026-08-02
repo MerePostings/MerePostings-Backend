@@ -70,7 +70,7 @@ const userService = {
       return transactions;
     } catch (error) {
       logger.error("Error fetching transactions:", error);
-      throw new AppError(error.message || "Failed to fetch transactions", 500);
+      throw new AppError("Failed to fetch transactions. Please try again.", 500);
     }
   },
 };
