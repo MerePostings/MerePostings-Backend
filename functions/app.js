@@ -12,7 +12,7 @@ const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const actionRoutes = require("./routes/actionRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
-const mailRoutes = require('./routes/mailRoutes')
+const mailRoutes = require("./routes/mailRoutes");
 const handleError = require("./middlewares/errorHandler");
 
 app.use(
@@ -41,7 +41,7 @@ app.use("/v1/admin", adminRoutes);
 app.use("/v1/notification", notificationRoutes);
 app.use("/v1/action", actionRoutes);
 app.use("/v1/dashboard", dashboardRoutes);
-app.use('/v1/contact', mailRoutes)
+app.use("/v1/contact", mailRoutes);
 
 app.use(handleError);
 

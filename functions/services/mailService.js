@@ -505,7 +505,7 @@ const sendPaymentConfirmationEmail = async (
                                     <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">
                                         This is an auto-generated email. Please do not reply to this message. 
                                         For help with any questions about your Mere Postings account, please contact us at 
-                                        <a href="mailto:support@torontorealestaterealty.com" style="color:#e9e9e9;text-decoration:none;">support@torontorealestaterealty.com</a>.
+                                        <a href="mailto:support@merepostings.com" style="color:#e9e9e9;text-decoration:none;">support@merepostings.com</a>.
                                     </div>
                                 </td>
                                 </tr>
@@ -666,7 +666,7 @@ const meetingScheduled = async (email, name, date, time, link) => {
                                 <div style="font-family:'Open Sans', sans-serif;font-size:14px;font-weight:400;line-height:1.6;text-align:left;color:#555555;">
                                   Your meeting has been scheduled for <strong>${date}</strong> at <strong>${time}</strong>. 
                                   If you have any questions or are unable to attend, please reach out to us at 
-                                  <a href="mailto:support@torontorealestaterealty.com" style="color:#154360;">support@torontorealestaterealty.com</a>.
+                                  <a href="mailto:support@merepostings.com" style="color:#154360;">support@merepostings.com</a>.
                                 </div>
                               </td>
                             </tr>
@@ -709,7 +709,7 @@ const meetingScheduled = async (email, name, date, time, link) => {
                                 <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">
                                   This is an auto-generated email. Please do not reply to this message.
                                   For help with any questions about your Mere Postings account, please contact us at
-                                  <a href="mailto:support@torontorealestaterealty.com" style="color:#e9e9e9;text-decoration:none;">support@torontorealestaterealty.com</a>.
+                                  <a href="mailto:support@merepostings.com" style="color:#e9e9e9;text-decoration:none;">support@merepostings.com</a>.
                                 </div>
                               </td>
                             </tr>
@@ -741,10 +741,10 @@ const guestMeetingRequest = async (email, year, month, day, time) => {
     month: "long",
     day: "numeric",
   });
- 
+
   client.sendEmail({
     From: `${process.env.EMAILUSER}`,
-    To: "support@torontorealestaterealty.com",
+    To: "support@merepostings.com",
     Subject: `New Guest Meeting Request — ${dateStr} at ${time}`,
     HtmlBody: `
 <!doctype html>
@@ -818,12 +818,12 @@ const guestMeetingRequest = async (email, year, month, day, time) => {
     MessageStream: "notifications",
   });
 };
- 
+
 // ── 2. Callback request notification ─────────────────────────────────────────
-const callbackRequest = async (email, time, subject) => {
+const callbackRequest = async (time, subject, email) => {
   client.sendEmail({
     From: `${process.env.EMAILUSER}`,
-    To: "support@torontorealestaterealty.com",
+    To: "support@merepostings.com",
     Subject: `New Callback Request${subject ? ` — ${subject}` : ""}`,
     HtmlBody: `
 <!doctype html>
@@ -896,12 +896,12 @@ const callbackRequest = async (email, time, subject) => {
     MessageStream: "notifications",
   });
 };
- 
+
 // ── 3. Send-a-message notification ───────────────────────────────────────────
 const contactMessage = async (name, email, message) => {
   client.sendEmail({
     From: `${process.env.EMAILUSER}`,
-    To: "support@torontorealestaterealty.com",
+    To: "support@merepostings.com",
     Subject: `New Message from ${name}`,
     HtmlBody: `
 <!doctype html>
@@ -970,6 +970,10 @@ const contactMessage = async (name, email, message) => {
  
 </body>
 </html>`,
+    MessageStream: "notifications",
+  });
+};
+
 const sendNotificationEmail = async (email, subject, htmlBody) => {
   await client.sendEmail({
     From: process.env.EMAILUSER,
@@ -986,7 +990,7 @@ module.exports = {
   meetingScheduled,
   guestMeetingRequest,
   callbackRequest,
-  contactMessage
+  contactMessage,
   sendNotificationEmail,
   client,
 };

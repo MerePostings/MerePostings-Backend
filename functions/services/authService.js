@@ -111,6 +111,31 @@ const authService = {
     }
   },
 
+  /**
+     * Called by an authenticated-but-unverified user from the "verify your
+     * email" gate screen. Uses req.user.uid (from verifyFirebaseToken) rather
+     * than trusting a client-supplied email, so a signed-in user can only
+     * ever resend to their own address.
+     */
+  resendVerificationEmail: async (uid) => {
+    const userRecord = await firebaseAdmin.auth().getUser(uid);
+
+    if (userRecord.emailVerified) {
+      throw new AppError("This email address is already verified.", 400);
+    }
+
+    const actionCodeSettings = {
+      url: process.env.FRONTEND_URL,
+      handleCodeInApp: true,
+    };
+
+    const emailVerificationLink = await firebaseAdmin
+        .auth()
+        .generateEmailVerificationLink(userRecord.email, actionCodeSettings);
+
+    await sendVerificationEmail(userRecord.email, emailVerificationLink, userRecord.displayName?.split(" ")[0] || "there");
+  },
+
 };
 
 
