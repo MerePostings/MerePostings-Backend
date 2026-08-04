@@ -112,14 +112,12 @@ describe("stripeService.requestRefund", () => {
     );
   });
 
-  // Undocumented edge case found while writing this test: if a listing is
-  // paid:true with no matching transactions doc, `snapshot.docs[0]` throws a
-  // raw TypeError (no docs to index into). The outer catch wraps it as
-  // `AppError(e.message, e.statusCode)`, and since a native TypeError has no
-  // .statusCode, that comes through as `undefined` — which errorHandler.js
-  // then defaults to 500. So today's *observable* behavior is a 500, but only
-  // by accident of that fallback, not by design. Documented, not fixed here.
-  test("500s (by fallback, not by design) when paid:true but no transaction record exists", async () => {
+  // Edge case: if a listing is paid:true with no matching transactions doc,
+  // `snapshot.docs[0]` throws a raw TypeError (no docs to index into). The
+  // outer catch no longer forwards that raw error to the client — it's not
+  // an AppError, so it gets logged server-side and replaced with a fixed,
+  // safe 500 message (never the internal TypeError text).
+  test("500s with a safe message when paid:true but no transaction record exists", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
       data: () => ({ownerId: "user-1", status: "draft", paid: true}),
@@ -127,7 +125,8 @@ describe("stripeService.requestRefund", () => {
     dbRefs.queryRef.get.mockResolvedValueOnce({docs: []});
 
     await expect(stripeService.requestRefund("listing-1", "user-1")).rejects.toMatchObject({
-      statusCode: undefined,
+      statusCode: 500,
+      message: "Failed to process refund. Please contact support.",
     });
   });
 });

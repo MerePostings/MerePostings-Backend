@@ -2,6 +2,7 @@ const express = require("express");
 const scheduleController = require("../controllers/scheduleController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
+const requireVerifiedEmail = require("../middlewares/requireVerifiedEmail");
 
 router.get(
     "/get-calendar",
@@ -11,6 +12,7 @@ router.get(
 router.post(
     "/create-event",
     verifyFirebaseToken,
+    requireVerifiedEmail,
     scheduleController.createCalendarEvent,
 );
 

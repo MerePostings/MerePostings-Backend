@@ -189,7 +189,8 @@ const notificationService = {
         nextCursor: hasMore ? docs[docs.length - 1].id : null,
       };
     } catch (e) {
-      throw new AppError(e.message || "Failed to fetch notifications", e.statusCode || 500);
+      logger.error("[notifications] Failed to fetch notifications:", e);
+      throw new AppError("Failed to fetch notifications. Please try again.", 500);
     }
   },
 

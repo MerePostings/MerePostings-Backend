@@ -4,9 +4,15 @@ const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyAdminFirebaseToken = require("../middlewares/verifyAdminFirebaseToken");
 const validate = require("../middlewares/validate");
+const createRateLimiter = require("../middlewares/rateLimiter");
 const {adminCounterTimeSchema, adminFinalizeTimeSchema} = require("../validators/action/schemas.js");
 
-router.post("/admin-login", adminController.handleAdminLogin);
+const adminLoginRateLimiter = createRateLimiter({
+  max: 5,
+  message: "Too many login attempts. Please try again later.",
+});
+
+router.post("/admin-login", adminLoginRateLimiter, adminController.handleAdminLogin);
 
 router.use(verifyAdminFirebaseToken);
 
