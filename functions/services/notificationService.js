@@ -3,6 +3,7 @@ const {db} = require("../config/db");
 const AppError = require("../utils/AppError");
 const {FieldValue} = require("firebase-admin/firestore");
 const {NOTIFICATION_TYPES, SEVERITIES, isEmailOptedIn} = require("../data/notificationTypes");
+const {ACTION_TARGET_VALUES, buildActionUrl} = require("../data/actionTargets");
 const {sendNotificationEmail} = require("./mailService");
 
 // notification content can originate from admin/user-influenced fields
@@ -16,7 +17,8 @@ const escapeHtml = (value) => String(value ?? "")
     .replace(/'/g, "&#39;");
 
 const renderNotificationEmail = (notification) => {
-  const safeActionUrl = /^https?:\/\//i.test(notification.actionUrl || "") ? notification.actionUrl : null;
+  const resolvedActionUrl = buildActionUrl(notification.actionTarget, notification.actionParams);
+  const safeActionUrl = /^https?:\/\//i.test(resolvedActionUrl || "") ? resolvedActionUrl : null;
 
   const actionHtml = safeActionUrl && notification.actionLabel ?
         `<tr><td align="center" style="padding:25px 30px;">
@@ -81,7 +83,8 @@ const notificationService = {
     message,
     listingId = null,
     listingAddress = null,
-    actionUrl = null,
+    actionTarget = null,
+    actionParams = null,
     actionLabel = null,
     sendEmail = true,
   }) => {
@@ -89,6 +92,9 @@ const notificationService = {
     if (!NOTIFICATION_TYPES.includes(type)) throw new AppError(`Unknown notification type: ${type}`, 400);
     if (!SEVERITIES.includes(severity)) throw new AppError(`Unknown notification severity: ${severity}`, 400);
     if (!title || !message) throw new AppError("title and message are required", 400);
+    if (actionTarget && !ACTION_TARGET_VALUES.includes(actionTarget)) {
+      throw new AppError(`Unknown action target: ${actionTarget}`, 400);
+    }
 
     let userData;
     try {
@@ -111,7 +117,8 @@ const notificationService = {
       listingAddress,
       isRead: false,
       readAt: null,
-      actionUrl,
+      actionTarget,
+      actionParams,
       actionLabel,
     };
 
