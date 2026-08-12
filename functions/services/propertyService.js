@@ -42,6 +42,7 @@ const PROCESS_FIELD_KEYS = [
   "occupancy",
   "propertyType",
   "askingPrice",
+  "requestListingPriceReview",
   "selectedAddons",
   "walkthroughAnswers",
   "sellerContact",
@@ -96,10 +97,13 @@ function unwrapStepGroupsToFlat(grouped) {
     out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
   }
   if (grouped.propertyDetails && typeof grouped.propertyDetails === "object") {
-    const {propertyType, askingPrice, ...rest} = grouped.propertyDetails;
+    const {propertyType, askingPrice, requestListingPriceReview, ...rest} = grouped.propertyDetails;
     out.propertyDetails = rest;
     if (propertyType !== undefined) out.propertyType = propertyType;
     if (askingPrice !== undefined) out.askingPrice = askingPrice;
+    if (requestListingPriceReview !== undefined) {
+      out.requestListingPriceReview = requestListingPriceReview;
+    }
   }
   if (grouped.featuresUpgrades != null) out.featuresUpgrades = grouped.featuresUpgrades;
   if (grouped.tellBuyers != null) out.buyerCopy = grouped.tellBuyers;

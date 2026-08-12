@@ -970,6 +970,10 @@ const contactMessage = async (name, email, message) => {
  
 </body>
 </html>`,
+    MessageStream: "notifications",
+  });
+};
+
 const sendNotificationEmail = async (email, subject, htmlBody) => {
   await client.sendEmail({
     From: process.env.EMAILUSER,
@@ -986,7 +990,7 @@ module.exports = {
   meetingScheduled,
   guestMeetingRequest,
   callbackRequest,
-  contactMessage
+  contactMessage,
   sendNotificationEmail,
   client,
 };
