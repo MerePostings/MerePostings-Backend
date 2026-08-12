@@ -171,6 +171,40 @@ describe("ownership", () => {
     const patch = projectStateToProperty({ownership: {additionalOwnerNames: "Jane Doe"}});
     expect("ownership.additionalOwnerNames" in patch).toBe(false);
   });
+
+  test("additionalOwners trims names and derives additionalOwnerNames", () => {
+    const patch = projectStateToProperty({
+      ownership: {
+        additionalOwners: [
+          {firstName: "  Jane  ", lastName: "Doe"},
+          {firstName: "  ", lastName: ""},
+          {firstName: "Acme", lastName: "Holdings Inc"},
+        ],
+      },
+    });
+    expect(patch["ownership.additionalOwners"]).toEqual([
+      {firstName: "Jane", lastName: "Doe"},
+      {firstName: "Acme", lastName: "Holdings Inc"},
+    ]);
+    expect(patch["ownership.additionalOwnerNames"]).toEqual(["Jane Doe", "Acme Holdings Inc"]);
+  });
+
+  test("authorityType, lawyerAssisting, and lawyer are copied when present", () => {
+    const patch = projectStateToProperty({
+      ownership: {
+        authorityType: "power-of-attorney",
+        lawyerAssisting: "yes",
+        lawyer: {fullName: "Pat Lee", firm: "Lee LLP", contactAuthorized: true},
+      },
+    });
+    expect(patch["ownership.authorityType"]).toBe("power-of-attorney");
+    expect(patch["ownership.lawyerAssisting"]).toBe("yes");
+    expect(patch["ownership.lawyer"]).toEqual({
+      fullName: "Pat Lee",
+      firm: "Lee LLP",
+      contactAuthorized: true,
+    });
+  });
 });
 
 describe("mailingAddress", () => {
