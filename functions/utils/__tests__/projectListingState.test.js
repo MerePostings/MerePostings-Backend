@@ -93,6 +93,20 @@ describe("sellerContact", () => {
     expect(patch["contact.sellerPhone"]).toBe("555-1234");
   });
 
+  test("joins first/middle/last into sellerFullName", () => {
+    const patch = projectStateToProperty({
+      sellerContact: {firstName: " Jane ", middleName: " Q ", lastName: " Doe "},
+    });
+    expect(patch["contact.sellerFullName"]).toBe("Jane Q Doe");
+  });
+
+  test("split names win over legacy fullName", () => {
+    const patch = projectStateToProperty({
+      sellerContact: {firstName: "Ada", lastName: "Lovelace", fullName: "Ignored"},
+    });
+    expect(patch["contact.sellerFullName"]).toBe("Ada Lovelace");
+  });
+
   test("omits sellerContact keys when not provided", () => {
     const patch = projectStateToProperty({sellerContact: {}});
     expect("contact.sellerFullName" in patch).toBe(false);

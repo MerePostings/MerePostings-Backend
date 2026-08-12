@@ -154,7 +154,11 @@ function projectStateToProperty(state) {
   }
 
   const c = state.sellerContact || {};
-  if (c.fullName) patch["contact.sellerFullName"] = String(c.fullName).trim();
+  const sellerFullName = [c.firstName, c.middleName, c.lastName]
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join(" ") || (c.fullName ? String(c.fullName).trim() : "");
+  if (sellerFullName) patch["contact.sellerFullName"] = sellerFullName;
   if (c.email) patch["contact.sellerEmail"] = String(c.email).trim();
   if (c.phone) patch["contact.sellerPhone"] = String(c.phone).trim();
   if (c.preferredContact && CONTACT_METHOD[c.preferredContact]) {
