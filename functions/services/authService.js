@@ -22,6 +22,10 @@ const authService = {
         throw new AppError("Please fill in all of the required fields.", 400);
       }
 
+      if (termsAccepted !== true) {
+        throw new AppError("You must accept the Terms of Service to sign up.", 400);
+      }
+
       const issues = [];
       const SPECIAL = /[!@#$%^&*()_+\-=[\]{}|;:",./<>?]/;
 
@@ -45,7 +49,8 @@ const authService = {
         existingUser = await firebaseAdmin.auth().getUserByEmail(email);
       } catch (error) {
         if (error.code !== "auth/user-not-found") {
-          throw new AppError(error.message || "Failed to sign up. Please try agian.", error.statusCode || 500); // unexpected error
+          logger.error("[auth] Unexpected error checking for existing user:", error);
+          throw new AppError("Failed to sign up. Please try again.", 500); // unexpected error
         }
       }
 
@@ -70,11 +75,8 @@ const authService = {
         ...(marketingOptIn && {
           marketing: true,
         }),
-
-        ...(termsAccepted && {
-          termsVersion: 1,
-          acceptedDate: FieldValue.serverTimestamp(),
-        }),
+        termsVersion: 1,
+        acceptedDate: FieldValue.serverTimestamp(),
       });
 
       createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});

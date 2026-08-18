@@ -1,6 +1,8 @@
+const logger = require("firebase-functions/logger");
 const propertyService = require("../services/propertyService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
 const stripeService = require("../services/stripeService");
+const AppError = require("../utils/AppError");
 const Busboy = require("busboy");
 const {ADDONS} = require("../data/addons");
 
@@ -70,7 +72,12 @@ const propertyController = {
         const urls = await propertyService.uploadMedia(listingId, files, mediaType, {uid, isAdmin, category});
         res.status(200).json({media: urls});
       } catch (err) {
-        res.status(err.statusCode || 500).json({error: err.message || "Upload failed"});
+        if (err instanceof AppError) {
+          res.status(err.statusCode).json({error: err.message});
+        } else {
+          logger.error("[property] Unexpected error during media upload:", err);
+          res.status(500).json({error: "Upload failed. Please try again."});
+        }
       }
     });
 
