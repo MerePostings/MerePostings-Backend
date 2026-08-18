@@ -7,6 +7,7 @@ const {ADDONS_BY_ID} = require("../data/addons");
 const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
+const {ACTION_TARGETS} = require("../data/actionTargets");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
 
 const MEDIA_LIMITS = {
@@ -542,7 +543,8 @@ const propertyService = {
             message: "Your listing has been submitted and is now being reviewed.",
             listingId,
             listingAddress: buildAddressName(data.location || {}),
-            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionTarget: ACTION_TARGETS.LISTING_DETAIL,
+            actionParams: {listingId},
             actionLabel: "View Listing",
             sendEmail: false,
           });
