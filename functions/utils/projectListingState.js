@@ -154,7 +154,11 @@ function projectStateToProperty(state) {
   }
 
   const c = state.sellerContact || {};
-  if (c.fullName) patch["contact.sellerFullName"] = String(c.fullName).trim();
+  const sellerFullName = [c.firstName, c.middleName, c.lastName]
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join(" ") || (c.fullName ? String(c.fullName).trim() : "");
+  if (sellerFullName) patch["contact.sellerFullName"] = sellerFullName;
   if (c.email) patch["contact.sellerEmail"] = String(c.email).trim();
   if (c.phone) patch["contact.sellerPhone"] = String(c.phone).trim();
   if (c.preferredContact && CONTACT_METHOD[c.preferredContact]) {
@@ -171,9 +175,32 @@ function projectStateToProperty(state) {
   if (typeof o.hasAdditionalOwners === "boolean") {
     patch["ownership.hasAdditionalOwners"] = o.hasAdditionalOwners;
   }
-  if (Array.isArray(o.additionalOwnerNames)) {
+  if (Array.isArray(o.additionalOwners)) {
+    const owners = o.additionalOwners
+        .map((x) => ({
+          firstName: String(x?.firstName || "").trim(),
+          lastName: String(x?.lastName || "").trim(),
+        }))
+        .filter((x) => x.firstName || x.lastName);
+    if (owners.length) {
+      patch["ownership.additionalOwners"] = owners;
+      const names = owners
+          .map((x) => [x.firstName, x.lastName].filter(Boolean).join(" "))
+          .filter(Boolean);
+      if (names.length) patch["ownership.additionalOwnerNames"] = names;
+    }
+  } else if (Array.isArray(o.additionalOwnerNames)) {
     const names = o.additionalOwnerNames.map((n) => String(n).trim()).filter(Boolean);
     if (names.length) patch["ownership.additionalOwnerNames"] = names;
+  }
+  if (typeof o.authorityType === "string" && o.authorityType.trim()) {
+    patch["ownership.authorityType"] = o.authorityType.trim();
+  }
+  if (typeof o.lawyerAssisting === "string" && o.lawyerAssisting.trim()) {
+    patch["ownership.lawyerAssisting"] = o.lawyerAssisting.trim();
+  }
+  if (o.lawyer && typeof o.lawyer === "object" && !Array.isArray(o.lawyer)) {
+    patch["ownership.lawyer"] = o.lawyer;
   }
 
   const m = state.mailingAddress || {};

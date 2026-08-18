@@ -323,6 +323,40 @@ const commonFields = {
   isRegisteredOwner: {path: "ownership", schema: Joi.boolean().required()},
   hasAdditionalOwners: {path: "ownership", schema: Joi.boolean()},
   additionalOwnerNames: {path: "ownership", schema: Joi.array().items(Joi.string().max(150)).max(10).allow(null)},
+  additionalOwners: {
+    path: "ownership",
+    schema: Joi.array().items(Joi.object({
+      firstName: Joi.string().max(80).allow("", null),
+      lastName: Joi.string().max(150).allow("", null),
+    })).max(10).allow(null),
+  },
+  authorityType: {
+    path: "ownership",
+    schema: Joi.string().valid(
+        "power-of-attorney",
+        "estate-trustee",
+        "court-guardian",
+        "corporate-officer",
+        "trustee",
+        "other",
+    ).allow(null),
+  },
+  lawyerAssisting: {
+    path: "ownership",
+    schema: Joi.string().valid("yes", "no", "not-yet").allow(null),
+  },
+  lawyer: {
+    path: "ownership",
+    schema: Joi.object({
+      fullName: Joi.string().max(150).allow("", null),
+      firm: Joi.string().max(150).allow("", null),
+      email: Joi.string().email().allow("", null),
+      phone: Joi.string().max(30).allow("", null),
+      lawSocietyNumber: Joi.string().max(40).allow("", null),
+      represents: Joi.string().valid("registered-owner", "legal-authority", "both").allow("", null),
+      contactAuthorized: Joi.boolean(),
+    }).unknown(true).allow(null),
+  },
 
   mailingAddressDifferent: {path: "mailingAddress", schema: Joi.boolean()},
   mailingAddressDetails: {path: "mailingAddress", schema: Joi.string().max(300).allow("", null)},

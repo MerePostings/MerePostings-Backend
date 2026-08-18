@@ -278,6 +278,26 @@ describe("propertyService.saveListingProcess", () => {
     expect(result.state.occupancy).toBe("owner");
   });
 
+  test("persists requestListingPriceReview", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        status: "draft",
+      }),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
+      state: {requestListingPriceReview: true},
+    });
+
+    expect(result.state.requestListingPriceReview).toBe(true);
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({requestListingPriceReview: true}),
+    );
+  });
+
   test("replaces arrays instead of concatenating", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
