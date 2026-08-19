@@ -298,6 +298,32 @@ describe("propertyService.saveListingProcess", () => {
     );
   });
 
+  test("persists tenancy details", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        status: "draft",
+        occupancy: "tenant",
+      }),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const tenancy = {
+      possession: "fixed-term",
+      fixedTermUntil: "2027-06-30",
+      leaseAgreementAvailable: true,
+    };
+    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
+      state: {occupancy: "tenant", tenancy},
+    });
+
+    expect(result.state.tenancy).toEqual(tenancy);
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({occupancy: "tenant", tenancy}),
+    );
+  });
+
   test("replaces arrays instead of concatenating", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,

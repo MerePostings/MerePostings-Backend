@@ -40,6 +40,7 @@ const PROCESS_FIELD_KEYS = [
   "listedWithOtherBrokerage",
   "supportTier",
   "occupancy",
+  "tenancy",
   "propertyType",
   "askingPrice",
   "requestListingPriceReview",
@@ -92,6 +93,7 @@ function unwrapStepGroupsToFlat(grouped) {
   }
   if (grouped.basicDetail) {
     out.occupancy = grouped.basicDetail.occupancy ?? null;
+    if (grouped.basicDetail.tenancy) out.tenancy = grouped.basicDetail.tenancy;
     out.sellerContact = grouped.basicDetail.sellerContact ?? {};
     out.ownership = grouped.basicDetail.ownership ?? {};
     out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
