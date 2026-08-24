@@ -9,6 +9,12 @@ const OCCUPANCY = {
   vacant: "vacant",
 };
 
+const TENANCY_POSSESSION = {
+  "fixed-term": "fixed_term",
+  "month-to-month": "month_to_month",
+  "vacant-possession": "vacant_possession_on_closing",
+};
+
 const PROPERTY_TYPE = {
   "detached": "detached",
   "semi-detached": "semiDetached",
@@ -147,6 +153,17 @@ function projectStateToProperty(state) {
   if (state.occupancy && OCCUPANCY[state.occupancy]) {
     patch.occupancyType = OCCUPANCY[state.occupancy];
     patch["occupancy.occupancyStatus"] = OCCUPANCY[state.occupancy];
+  }
+
+  const t = state.tenancy || {};
+  if (t.possession && TENANCY_POSSESSION[t.possession]) {
+    patch["occupancy.tenancyPossession"] = TENANCY_POSSESSION[t.possession];
+  }
+  if (typeof t.fixedTermUntil === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.fixedTermUntil.trim())) {
+    patch["occupancy.fixedTermUntil"] = t.fixedTermUntil.trim();
+  }
+  if (typeof t.leaseAgreementAvailable === "boolean") {
+    patch["occupancy.leaseAgreementAvailable"] = t.leaseAgreementAvailable;
   }
 
   if (typeof state.askingPrice === "number" && state.askingPrice > 0) {

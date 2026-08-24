@@ -71,6 +71,37 @@ describe("occupancy", () => {
   });
 });
 
+describe("tenancy", () => {
+  test.each([
+    ["fixed-term", "fixed_term"],
+    ["month-to-month", "month_to_month"],
+    ["vacant-possession", "vacant_possession_on_closing"],
+  ])("maps possession %s to occupancy.tenancyPossession %s", (fe, be) => {
+    const patch = projectStateToProperty({tenancy: {possession: fe}});
+    expect(patch["occupancy.tenancyPossession"]).toBe(be);
+  });
+
+  test("writes a valid YYYY-MM-DD fixedTermUntil", () => {
+    const patch = projectStateToProperty({tenancy: {fixedTermUntil: "2027-06-30"}});
+    expect(patch["occupancy.fixedTermUntil"]).toBe("2027-06-30");
+  });
+
+  test("ignores a malformed fixedTermUntil", () => {
+    const patch = projectStateToProperty({tenancy: {fixedTermUntil: "June 30"}});
+    expect("occupancy.fixedTermUntil" in patch).toBe(false);
+  });
+
+  test.each([true, false])("writes leaseAgreementAvailable %p", (value) => {
+    const patch = projectStateToProperty({tenancy: {leaseAgreementAvailable: value}});
+    expect(patch["occupancy.leaseAgreementAvailable"]).toBe(value);
+  });
+
+  test("invalid possession is omitted", () => {
+    const patch = projectStateToProperty({tenancy: {possession: "week-to-week"}});
+    expect("occupancy.tenancyPossession" in patch).toBe(false);
+  });
+});
+
 describe("askingPrice", () => {
   test("valid positive number is set", () => {
     const patch = projectStateToProperty({askingPrice: 750000});

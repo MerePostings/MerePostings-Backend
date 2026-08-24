@@ -313,6 +313,15 @@ const commonFields = {
   recentImprovements: {path: "improvements", schema: Joi.string().max(1000).allow("", null)},
 
   occupancyStatus: {path: "occupancy", schema: Joi.string().valid(...OCCUPANCY_OPTIONS).required()},
+  tenancyPossession: {
+    path: "occupancy",
+    schema: Joi.string().valid("fixed_term", "month_to_month", "vacant_possession_on_closing").allow(null),
+  },
+  fixedTermUntil: {
+    path: "occupancy",
+    schema: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).allow("", null),
+  },
+  leaseAgreementAvailable: {path: "occupancy", schema: Joi.boolean().allow(null)},
 
   sellerFullName: {path: "contact", schema: Joi.string().max(150).required()},
   sellerEmail: {path: "contact", schema: Joi.string().email().required()},

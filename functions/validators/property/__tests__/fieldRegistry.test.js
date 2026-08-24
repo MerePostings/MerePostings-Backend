@@ -152,4 +152,25 @@ describe("commonFields Joi boundary values", () => {
     expect(commonFields.preferredContactMethod.schema.validate("phone").error).toBeUndefined();
     expect(commonFields.preferredContactMethod.schema.validate("carrier_pigeon").error).toBeDefined();
   });
+
+  test.each(["fixed_term", "month_to_month", "vacant_possession_on_closing"])(
+      "tenancyPossession accepts %s",
+      (value) => {
+        expect(commonFields.tenancyPossession.schema.validate(value).error).toBeUndefined();
+      },
+  );
+
+  test("tenancyPossession rejects an unknown value", () => {
+    expect(commonFields.tenancyPossession.schema.validate("week_to_week").error).toBeDefined();
+  });
+
+  test("fixedTermUntil accepts an ISO date string", () => {
+    expect(commonFields.fixedTermUntil.schema.validate("2027-06-30").error).toBeUndefined();
+    expect(commonFields.fixedTermUntil.schema.validate("June 30").error).toBeDefined();
+  });
+
+  test("leaseAgreementAvailable accepts boolean", () => {
+    expect(commonFields.leaseAgreementAvailable.schema.validate(true).error).toBeUndefined();
+    expect(commonFields.leaseAgreementAvailable.schema.validate("yes").error).toBeDefined();
+  });
 });
