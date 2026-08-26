@@ -11,18 +11,6 @@ const propertyController = {
     res.status(201).json({listingId});
   }),
 
-  saveDraftField: asyncErrorHandler(async (req, res) => {
-    const {listingId} = req.params;
-    const field = await propertyService.saveDraftField(req.user.uid, listingId, req.validatedField);
-    res.status(200).json({success: true, field});
-  }),
-
-  // LEGACY — kept for backward compatibility, see propertyService.saveProperty
-  addProperty: asyncErrorHandler(async (req, res)=>{
-    const listingId = await propertyService.saveProperty(req.user.uid, req.body);
-    res.status(200).json({listingId});
-  }),
-
   getListing: asyncErrorHandler(async (req, res)=>{
     const listing = await propertyService.getListing(req.user.uid, req.params.id);
     res.status(200).json({listing});
@@ -142,25 +130,6 @@ const propertyController = {
 
   getAddons: asyncErrorHandler(async (req, res) => {
     res.status(200).json(ADDONS);
-  }),
-
-  getListingProcess: asyncErrorHandler(async (req, res) => {
-    const process = await propertyService.getListingProcess(req.user.uid, req.params.listingId);
-    res.status(200).json({process});
-  }),
-
-  saveListingProcess: asyncErrorHandler(async (req, res) => {
-    const process = await propertyService.saveListingProcess(
-        req.user.uid,
-        req.params.listingId,
-        req.body,
-    );
-    res.status(200).json({process});
-  }),
-
-  getOwnerMostRecentProcess: asyncErrorHandler(async (req, res) => {
-    const result = await propertyService.getOwnerMostRecentProcess(req.user.uid);
-    res.status(200).json(result);
   }),
 
   getProgressTracker: asyncErrorHandler(async (req, res) => {

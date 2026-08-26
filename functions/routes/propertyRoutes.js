@@ -3,10 +3,8 @@ const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
-const validateDraftField = require("../middlewares/validateDraftField");
 const {
   initiatePropertySchema, selectedAddonsSchema,
-  listingProcessPatchSchema,
 } = require("../validators/property/schemas.js");
 
 router.get(
@@ -28,12 +26,6 @@ router.get(
 );
 
 router.get(
-    "/get-owner-most-recent-process",
-    verifyFirebaseToken,
-    propertyController.getOwnerMostRecentProcess,
-);
-
-router.get(
     "/listings/:id",
     verifyFirebaseToken,
     propertyController.getListing,
@@ -46,25 +38,7 @@ router.post(
     propertyController.initiateProperty,
 );
 
-router.get(
-    "/:listingId/listing-process",
-    verifyFirebaseToken,
-    propertyController.getListingProcess,
-);
 
-router.patch(
-    "/:listingId/listing-process",
-    verifyFirebaseToken,
-    validate(listingProcessPatchSchema),
-    propertyController.saveListingProcess,
-);
-
-router.patch(
-    "/:listingId/draft-field",
-    verifyFirebaseToken,
-    validateDraftField,
-    propertyController.saveDraftField,
-);
 
 router.post(
     "/create-client-secret/:listingId",
@@ -78,13 +52,6 @@ router.post(
     verifyFirebaseToken,
     propertyController.requestRefund,
 );
-
-// LEGACY — kept for backward compatibility, see propertyController.addProperty
-// router.post(
-//     "/add-property",
-//     verifyFirebaseToken,
-//     propertyController.addProperty,
-// );
 
 router.post(
     "/:listingId/media/:mediaType",
