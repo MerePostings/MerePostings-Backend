@@ -1,14 +1,16 @@
-import asyncErrorHandler from "../utils/asyncErrorHandler";
-import propertyFieldsSchema from "../schemas/property-fields.json";
+const asyncErrorHandler = require("../utils/asyncErrorHandler");
+const propertyFieldsSchema = require("../schemas/property-fields.json");
 
 const schemaController = {
-    getPropertyFields: asyncErrorHandler(async (req, res) => {
-        res.status(200).json(propertyFieldsSchema);
-    }),
+  getPropertyFields: asyncErrorHandler(async (req, res) => {
+    res.status(200).json(propertyFieldsSchema);
+  }),
 
-    getPropertyFieldsVersion: asyncErrorHandler(async (req, res) => {
-        res.status(200).json({ version: propertyFieldsSchema.version });
-    }),
+  getPropertyFieldsVersion: asyncErrorHandler(async (req, res) => {
+    res.status(200).json({
+      version: propertyFieldsSchema.version
+    });
+  }),
 };
 
-export default schemaController;
+module.exports = schemaController;
