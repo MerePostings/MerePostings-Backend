@@ -322,6 +322,74 @@ describe("propertyService.reorderMedia", () => {
   });
 });
 
+describe("propertyService.updateProperty", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  const fields = {"property-type": "detached", "garage": true};
+
+  test("throws 404 when the listing doesn't exist", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+
+    await expect(
+        propertyService.updateProperty("user-1", "listing-1", fields),
+    ).rejects.toMatchObject({statusCode: 404});
+  });
+
+  test("throws 403 when ownerId doesn't match the caller", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "someone-else", status: "draft"})});
+
+    await expect(
+        propertyService.updateProperty("user-1", "listing-1", fields),
+    ).rejects.toMatchObject({statusCode: 403});
+  });
+
+  test("throws 409 when the listing is already submitted", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "submitted"})});
+
+    await expect(
+        propertyService.updateProperty("user-1", "listing-1", fields),
+    ).rejects.toMatchObject({statusCode: 409});
+  });
+
+  test("happy path: writes fields.* and promotes initiated to draft", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "initiated"})});
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.updateProperty("user-1", "listing-1", fields);
+
+    expect(result).toEqual(fields);
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "fields.property-type": "detached",
+          "fields.garage": true,
+          "status": "draft",
+        }),
+    );
+  });
+
+  test("happy path: keeps draft status unchanged", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    await propertyService.updateProperty("user-1", "listing-1", fields);
+
+    const updateArg = dbRefs.docRef.update.mock.calls[0][0];
+    expect(updateArg).not.toHaveProperty("status");
+    expect(updateArg["fields.garage"]).toBe(true);
+  });
+
+  test("throws 500 when the Firestore write fails", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
+    dbRefs.docRef.update.mockRejectedValueOnce(new Error("firestore down"));
+
+    await expect(
+        propertyService.updateProperty("user-1", "listing-1", fields),
+    ).rejects.toMatchObject({statusCode: 500});
+  });
+});
+
 describe("propertyService.saveSelectedAddons", () => {
   beforeEach(() => {
     resetDbMock();

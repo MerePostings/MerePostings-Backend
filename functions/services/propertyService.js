@@ -61,6 +61,43 @@ const buildAddressName = (location) => {
 };
 
 const propertyService = {
+  updateProperty: async (userId, listingId, fields) => {
+    const docRef = db.collection("properties").doc(listingId);
+    const snap = await docRef.get();
+
+    if (!snap.exists) {
+      throw new AppError("Property not found", 404);
+    }
+
+    const existing = snap.data();
+
+    if (existing.ownerId !== userId) {
+      throw new AppError("Unauthorized access to this property", 403);
+    }
+
+    if (!EDITABLE_STATUSES.has(existing.status)) {
+      throw new AppError("Cannot edit a listing that has already been submitted", 409);
+    }
+
+    const update = {updatedAt: FieldValue.serverTimestamp()};
+    for (const [key, value] of Object.entries(fields)) {
+      update[`fields.${key}`] = value;
+    }
+
+    if (existing.status === "initiated") {
+      update.status = "draft";
+    }
+
+    try {
+      await docRef.update(update);
+    } catch (e) {
+      logger.error("Error updating property fields:", e);
+      throw new AppError("Failed to update property", 500);
+    }
+
+    return fields;
+  },
+
   initiateProperty: async (userId, body = {}) => {
     const {occupancyType} = body || {};
     try {

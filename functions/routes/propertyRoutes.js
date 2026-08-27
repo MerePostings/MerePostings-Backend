@@ -3,6 +3,7 @@ const propertyController = require("../controllers/propertyController");
 const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
+const validatePropertyPatch = require("../middlewares/validatePropertyPatch");
 const {
   initiatePropertySchema, selectedAddonsSchema,
 } = require("../validators/property/schemas.js");
@@ -38,7 +39,12 @@ router.post(
     propertyController.initiateProperty,
 );
 
-
+router.patch(
+    "/:listingId",
+    verifyFirebaseToken,
+    validatePropertyPatch,
+    propertyController.updateProperty,
+);
 
 router.post(
     "/create-client-secret/:listingId",

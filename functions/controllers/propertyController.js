@@ -5,13 +5,21 @@ const Busboy = require("busboy");
 const {ADDONS} = require("../data/addons");
 
 const propertyController = {
-
   initiateProperty: asyncErrorHandler(async (req, res) => {
     const listingId = await propertyService.initiateProperty(req.user.uid, req.body);
     res.status(201).json({listingId});
   }),
 
-  getListing: asyncErrorHandler(async (req, res)=>{
+  updateProperty: asyncErrorHandler(async (req, res) => {
+    const fields = await propertyService.updateProperty(
+        req.user.uid,
+        req.params.listingId,
+        req.validatedFields,
+    );
+    res.status(200).json({success: true, fields});
+  }),
+
+  getListing: asyncErrorHandler(async (req, res) => {
     const listing = await propertyService.getListing(req.user.uid, req.params.id);
     res.status(200).json({listing});
   }),

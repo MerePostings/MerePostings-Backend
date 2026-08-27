@@ -1,0 +1,529 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "version": 1,
+    "type": "object",
+    "properties": {
+        "property-type": {
+            "type": "string",
+            "enum": [
+                "detached",
+                "semi-detached",
+                "bungalow-townhouse",
+                "rural-acreage",
+                "income-duplex-triplex",
+                "condo-apartment",
+                "condo-townhouse"
+            ],
+            "x-ui": { "section": "basic-details" }
+        },
+
+        "occupancy-pathway": {
+            "type": "string",
+            "enum": [
+                "tenanted",
+                "vacant-possession-on-closing",
+                "other-i-know-what-i-need"
+            ],
+            "x-ui": {
+                "section": "occupancy"
+            }
+        },
+        "tenancy-type": {
+            "type": "string",
+            "enum": [
+                "fixed-term",
+                "month-to-month",
+                "vacant-possession-on-closing"
+            ],
+            "x-ui": {
+                "section": "occupancy"
+            }
+        },
+        "areas-occupied-by-tenant": {
+            "type": "string",
+            "enum": ["entire-property", "basement", "other"],
+            "x-ui": {
+                "section": "occupancy"
+            }
+        },
+
+        "attached-side": {
+            "type": "string",
+            "enum": ["left", "right", "not-sure"],
+            "x-ui": { "section": "exterior-lot" }
+        },
+        "townhouse-ownership-type": {
+            "type": "string",
+            "enum": ["freehold", "condominium"],
+            "x-ui": {
+                "section": "basic-details"
+            }
+        },
+        "townhouse-configuration": {
+            "type": "string",
+            "enum": ["conventional", "stacked", "back-to-back", "other"],
+            "x-ui": {
+                "section": "basic-details"
+            }
+        },
+
+        "house-style": {
+            "type": "string",
+            "enum": [
+                "bungalow",
+                "1.5-storey",
+                "2-storey",
+                "2.5-storey",
+                "3-storey",
+                "sidesplit",
+                "backsplit",
+                "other"
+            ],
+            "x-ui": {
+                "section": "exterior-lot"
+            }
+        },
+        "year-built": {
+            "type": ["integer", "string"],
+            "x-ui": {
+                "section": "exterior-lot"
+            }
+        },
+        "lot-frontage": {
+            "type": "number",
+            "x-ui": {
+                "section": "exterior-lot"
+            }
+        },
+        "lot-depth": {
+            "type": "number",
+            "x-ui": {
+                "section": "exterior-lot"
+            }
+        },
+
+        "garage": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "parking-garage"
+            }
+        },
+        "garage-type": {
+            "type": "string",
+            "enum": [
+                "attached",
+                "detached",
+                "built-in",
+                "carport",
+                "underground",
+                "other"
+            ],
+            "x-ui": { "section": "parking-garage" }
+        },
+        "garage-spaces": {
+            "type": "integer",
+            "minimum": 0,
+            "x-ui": { "section": "parking-garage" }
+        },
+        "driveway": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "parking-garage"
+            }
+        },
+        "driveway-type": {
+            "type": "string",
+            "enum": ["private", "mutual", "shared", "circular", "other"],
+            "x-ui": { "section": "parking-garage" }
+        },
+        "parking-included": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "parking-garage"
+            }
+        },
+        "parking-ownership": {
+            "type": "string",
+            "enum": ["owned", "exclusive-use", "rental", "other"],
+            "x-ui": {
+                "section": "parking-garage"
+            }
+        },
+
+        "bedrooms-above-grade": {
+            "type": "integer",
+            "minimum": 0,
+            "x-ui": {
+                "section": "interior"
+            }
+        },
+        "bathrooms": {
+            "type": "object",
+            "properties": {
+                "two-piece": { "type": "integer", "minimum": 0 },
+                "three-piece": { "type": "integer", "minimum": 0 },
+                "four-piece": { "type": "integer", "minimum": 0 },
+                "five-piece-plus": { "type": "integer", "minimum": 0 },
+                "ensuite": { "type": "integer", "minimum": 0 }
+            },
+            "x-ui": { "section": "interior" }
+        },
+        "kitchen-count": {
+            "type": "integer",
+            "minimum": 0,
+            "x-ui": { "section": "interior" }
+        },
+
+        "heating-type": {
+            "type": "string",
+            "enum": [
+                "forced-air",
+                "boiler",
+                "radiant",
+                "heat-pump",
+                "baseboard",
+                "other"
+            ],
+            "x-ui": { "section": "systems-utilities" }
+        },
+        "heating-fuel": {
+            "type": "string",
+            "enum": [
+                "natural-gas",
+                "electric",
+                "oil",
+                "propane",
+                "wood",
+                "other"
+            ],
+            "x-ui": { "section": "systems-utilities" }
+        },
+        "cooling": {
+            "type": "string",
+            "enum": ["central-air", "heat-pump", "window", "none", "other"],
+            "x-ui": { "section": "systems-utilities" }
+        },
+        "water-supply": {
+            "type": "string",
+            "enum": ["municipal", "well", "other"],
+            "x-ui": { "section": "systems-utilities" }
+        },
+        "sewer": {
+            "type": "string",
+            "enum": ["municipal", "septic", "other"],
+            "x-ui": { "section": "systems-utilities" }
+        },
+
+        "basement": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "lower-level"
+            }
+        },
+        "basement-extent": {
+            "type": "string",
+            "enum": ["full", "partial", "none"],
+            "x-ui": { "section": "lower-level" }
+        },
+        "basement-finish": {
+            "type": "string",
+            "enum": ["finished", "partially-finished", "unfinished", "none"],
+            "x-ui": { "section": "lower-level" }
+        },
+        "basement-bedroom": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "x-ui": { "section": "lower-level" }
+        },
+        "basement-apartment": {
+            "type": "boolean",
+            "default": false,
+            "x-ui": { "section": "lower-level" }
+        },
+        "seller-understanding-of-status": {
+            "type": "string",
+            "enum": ["legal", "legal-non-conforming", "not-sure"],
+            "x-ui": { "section": "lower-level" }
+        },
+
+        "additional-living-space": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "additional-living-spaces"
+            }
+        },
+        "additional-living-space-type": {
+            "type": "string",
+            "enum": [
+                "garden-suite",
+                "laneway-house",
+                "coach-house",
+                "above-garage-suite",
+                "other"
+            ],
+            "x-ui": { "section": "additional-living-spaces" }
+        },
+
+        "rural-property-type": {
+            "type": "string",
+            "enum": [
+                "residential-acreage",
+                "hobby-farm",
+                "estate-property",
+                "other"
+            ],
+            "x-ui": {
+                "section": "rural-details"
+            }
+        },
+        "approximate-acreage": {
+            "type": "number",
+            "x-ui": {
+                "section": "rural-details"
+            }
+        },
+        "road-type": {
+            "type": "string",
+            "enum": ["municipal", "private", "unopened", "other"],
+            "x-ui": { "section": "rural-access" }
+        },
+        "water-source": {
+            "type": "string",
+            "enum": [
+                "drilled-well",
+                "dug-well",
+                "municipal",
+                "lake",
+                "cistern",
+                "other"
+            ],
+            "x-ui": {
+                "section": "rural-water-wastewater"
+            }
+        },
+        "septic-system": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "rural-water-wastewater"
+            }
+        },
+        "outbuildings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "structure-type": {
+                        "type": "string",
+                        "enum": [
+                            "barn",
+                            "workshop",
+                            "shed",
+                            "detached-garage",
+                            "stable",
+                            "drive-shed",
+                            "greenhouse",
+                            "other"
+                        ]
+                    },
+                    "approximate-size": { "type": "string" },
+                    "electricity": { "type": "boolean" },
+                    "water": { "type": "boolean" },
+                    "heating": { "type": "boolean" }
+                }
+            },
+            "x-ui": {
+                "section": "rural-outbuildings"
+            }
+        },
+
+        "property-configuration": {
+            "type": "string",
+            "enum": ["duplex", "triplex"],
+            "x-ui": {
+                "section": "income-property-configuration"
+            }
+        },
+        "number-of-residential-units": {
+            "type": "integer",
+            "enum": [2, 3],
+            "x-ui": {
+                "section": "income-property-configuration"
+            }
+        },
+        "units": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "unit-identifier": { "type": "string" },
+                    "bedrooms": { "type": "integer", "minimum": 0 },
+                    "bathrooms": { "type": "object" },
+                    "current-occupancy": {
+                        "type": "string",
+                        "enum": ["vacant", "owner-occupied", "tenant-occupied"]
+                    },
+                    "current-monthly-rent": { "type": "number" },
+                    "tenancy-type": {
+                        "type": "string",
+                        "enum": ["fixed-term", "month-to-month"]
+                    }
+                }
+            },
+            "x-ui": {
+                "section": "income-property-units"
+            }
+        },
+
+        "unit-number": {
+            "type": "string",
+            "x-ui": {
+                "section": "condo-unit-details"
+            }
+        },
+        "approximate-unit-size": {
+            "type": "number",
+            "x-ui": {
+                "section": "condo-unit-details"
+            }
+        },
+        "balcony": {
+            "type": "boolean",
+            "x-ui": {
+                "section": "condo-outdoor-space"
+            }
+        },
+        "locker-included": {
+            "type": "boolean",
+            "x-ui": { "section": "condo-locker-storage" }
+        },
+        "monthly-condo-fee": {
+            "type": "number",
+            "minimum": 0,
+            "x-ui": { "section": "condo-fees" }
+        },
+        "special-assessment-known": {
+            "type": "string",
+            "enum": ["yes", "no", "not-sure"],
+            "x-ui": {
+                "section": "condo-fees"
+            }
+        },
+        "amenities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "x-ui": {
+                "section": "building-amenities"
+            }
+        },
+
+        "location-features": {
+            "type": "array",
+            "items": { "type": "string" },
+            "x-ui": { "section": "location-nearby-features" }
+        },
+        "listing-description": {
+            "type": "string",
+            "x-ui": { "section": "listing-description" }
+        },
+        "chattels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "x-ui": { "section": "chattels" }
+        },
+        "fixtures-excluded": {
+            "type": "array",
+            "items": { "type": "string" },
+            "x-ui": { "section": "fixtures" }
+        },
+        "rented-items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "item": { "type": "string" },
+                    "provider": { "type": "string" },
+                    "approximate-payment": { "type": "number" },
+                    "buyout-known": { "type": "string" }
+                }
+            },
+            "x-ui": { "section": "rented-leased-items" }
+        }
+    },
+
+    "required": ["property-type"],
+
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "property-type": {
+                        "enum": [
+                            "detached",
+                            "semi-detached",
+                            "bungalow-townhouse",
+                            "rural-acreage"
+                        ]
+                    }
+                }
+            },
+            "then": { "required": ["basement"] }
+        },
+        {
+            "if": {
+                "properties": { "basement": { "const": true } },
+                "required": ["basement"]
+            },
+            "then": { "required": ["basement-extent", "basement-finish"] }
+        },
+        {
+            "if": {
+                "properties": { "basement-apartment": { "const": true } },
+                "required": ["basement-apartment"]
+            },
+            "then": { "required": ["seller-understanding-of-status"] }
+        },
+        {
+            "if": {
+                "properties": {
+                    "property-type": { "const": "income-duplex-triplex" }
+                }
+            },
+            "then": {
+                "required": [
+                    "property-configuration",
+                    "number-of-residential-units",
+                    "units"
+                ]
+            }
+        },
+        {
+            "if": {
+                "properties": { "property-type": { "const": "rural-acreage" } }
+            },
+            "then": {
+                "required": [
+                    "rural-property-type",
+                    "approximate-acreage",
+                    "water-source"
+                ]
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "property-type": {
+                        "enum": ["condo-apartment", "condo-townhouse"]
+                    }
+                }
+            },
+            "then": { "required": ["unit-number", "monthly-condo-fee"] }
+        },
+        {
+            "if": {
+                "properties": { "property-type": { "const": "semi-detached" } }
+            },
+            "then": { "required": ["attached-side"] }
+        }
+    ]
+}
