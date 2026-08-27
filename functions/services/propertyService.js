@@ -32,6 +32,52 @@ const MEDIA_LIMITS = {
   },
 };
 
+// Firestore arrays can't be patched element-by-element, so any nulls inside
+// an array (or objects nested in an array) are just dropped rather than
+// turned into FieldValue.delete() sentinels.
+const stripNulls = (val) => {
+  if (val === null) return undefined;
+  if (Array.isArray(val)) {
+    return val.filter((el) => el !== null).map((el) => (el !== null && typeof el === "object" ? stripNulls(el) : el));
+  }
+  if (val !== null && typeof val === "object") {
+    const out = Object.fromEntries(
+        Object.entries(val)
+            .map(([k, v]) => [k, stripNulls(v)])
+            .filter(([, v]) => v !== undefined),
+    );
+    return Object.keys(out).length ? out : undefined;
+  }
+  return val;
+};
+
+// Recursively turns a plain object into Firestore dot-notation updates,
+// converting `null` leaves into FieldValue.delete() so they actually clear
+// the field instead of writing a literal null.
+const flatten = (prefix, val) => {
+  if (val === null) return [[prefix, FieldValue.delete()]];
+  if (Array.isArray(val)) {
+    return [[prefix, val.filter((el) => el !== null).map((el) => (el !== null && typeof el === "object" ? stripNulls(el) : el))]];
+  }
+  if (val !== null && typeof val === "object") {
+    return Object.entries(val).flatMap(([k, v]) => flatten(`${prefix}.${k}`, v));
+  }
+  return [[prefix, val]];
+};
+
+const hasNullDeep = (v) =>
+  v === null ||
+  (Array.isArray(v) ? v.some(hasNullDeep) : v !== null && typeof v === "object" && Object.values(v).some(hasNullDeep));
+
+// If a field has no nulls anywhere, write it as a single key (`fields.foo`)
+// to avoid dot-notation blowup. Otherwise flatten it so nulls become deletes.
+const toFieldUpdates = (fields) =>
+  Object.fromEntries(
+      Object.entries(fields).flatMap(([k, v]) =>
+        hasNullDeep(v) ? flatten(`fields.${k}`, v) : [[`fields.${k}`, v]],
+      ),
+  );
+
 /** Throws 404/403 unless `uid` owns `listingId`. Skip entirely for admin-initiated calls. */
 async function assertListingOwnership(listingId, uid) {
   const snap = await db.collection("properties").doc(listingId).get();
@@ -83,10 +129,7 @@ const propertyService = {
       throw new AppError("Cannot edit a listing that has already been submitted", 409);
     }
 
-    const update = {updatedAt: FieldValue.serverTimestamp()};
-    for (const [key, value] of Object.entries(fields)) {
-      update[`fields.${key}`] = value;
-    }
+    const update = {updatedAt: FieldValue.serverTimestamp(), ...toFieldUpdates(fields)};
 
     if (existing.status === "initiated") {
       update.status = "draft";
