@@ -1,4 +1,4 @@
-const asyncErrorHandler = require("../utils/asyncErrorHandler");
+const asyncErrorHandler = require("../utils/asyncErrorHandler.js");
 const propertyFieldsSchema = require("../schemas/property-fields.json");
 
 const schemaController = {
