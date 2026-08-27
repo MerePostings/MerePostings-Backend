@@ -1,3 +1,4 @@
 firestore-debug.log
 .claude*
 claude*
+.worktrees/
