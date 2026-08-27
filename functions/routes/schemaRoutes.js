@@ -9,4 +9,10 @@ router.get(
     schemaController.getPropertyFields,
 );
 
+router.get(
+    "/property-fields/version",
+    verifyFirebaseToken,
+    schemaController.getPropertyFieldsVersion,
+);
+
 module.exports = router;
