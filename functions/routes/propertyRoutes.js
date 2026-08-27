@@ -5,7 +5,7 @@ const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const validate = require("../middlewares/validate");
 const validatePropertyPatch = require("../middlewares/validatePropertyPatch");
 const {
-  initiatePropertySchema, selectedAddonsSchema,
+  initiatePropertySchema, selectedAddonsSchema, updateViewedListingStepsSchema,
 } = require("../validators/property/schemas.js");
 
 router.get(
@@ -44,6 +44,13 @@ router.patch(
     verifyFirebaseToken,
     validatePropertyPatch,
     propertyController.updateProperty,
+);
+
+router.patch(
+    "/:listingId/viewed-listing-steps",
+    verifyFirebaseToken,
+    validate(updateViewedListingStepsSchema),
+    propertyController.updateViewedListingSteps,
 );
 
 router.post(

@@ -390,6 +390,62 @@ describe("propertyService.updateProperty", () => {
   });
 });
 
+describe("propertyService.updateViewedListingSteps", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  const steps = ["basic-details", "occupancy"];
+
+  test("throws 404 when the listing doesn't exist", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+
+    await expect(
+        propertyService.updateViewedListingSteps("user-1", "listing-1", steps),
+    ).rejects.toMatchObject({statusCode: 404});
+  });
+
+  test("throws 403 when ownerId doesn't match the caller", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "someone-else", status: "draft"})});
+
+    await expect(
+        propertyService.updateViewedListingSteps("user-1", "listing-1", steps),
+    ).rejects.toMatchObject({statusCode: 403});
+  });
+
+  test("throws 409 when the listing is already submitted", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "submitted"})});
+
+    await expect(
+        propertyService.updateViewedListingSteps("user-1", "listing-1", steps),
+    ).rejects.toMatchObject({statusCode: 409});
+  });
+
+  test("happy path: persists viewedListingSteps and promotes initiated to draft", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "initiated"})});
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.updateViewedListingSteps("user-1", "listing-1", steps);
+
+    expect(result).toEqual(steps);
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "viewedListingSteps": steps,
+          "status": "draft",
+        }),
+    );
+  });
+
+  test("throws 500 when the Firestore write fails", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
+    dbRefs.docRef.update.mockRejectedValueOnce(new Error("firestore down"));
+
+    await expect(
+        propertyService.updateViewedListingSteps("user-1", "listing-1", steps),
+    ).rejects.toMatchObject({statusCode: 500});
+  });
+});
+
 describe("propertyService.saveSelectedAddons", () => {
   beforeEach(() => {
     resetDbMock();

@@ -98,6 +98,43 @@ const propertyService = {
     return fields;
   },
 
+  updateViewedListingSteps: async (userId, listingId, steps) => {
+    const docRef = db.collection("properties").doc(listingId);
+    const snap = await docRef.get();
+
+    if (!snap.exists) {
+      throw new AppError("Property not found", 404);
+    }
+
+    const existing = snap.data();
+
+    if (existing.ownerId !== userId) {
+      throw new AppError("Unauthorized access to this property", 403);
+    }
+
+    if (!EDITABLE_STATUSES.has(existing.status)) {
+      throw new AppError("Cannot edit a listing that has already been submitted", 409);
+    }
+
+    const update = {
+      viewedListingSteps: steps,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (existing.status === "initiated") {
+      update.status = "draft";
+    }
+
+    try {
+      await docRef.update(update);
+    } catch (e) {
+      logger.error("Error updating viewed listing steps:", e);
+      throw new AppError("Failed to update viewed listing steps", 500);
+    }
+
+    return steps;
+  },
+
   initiateProperty: async (userId, body = {}) => {
     const {occupancyType} = body || {};
     try {
