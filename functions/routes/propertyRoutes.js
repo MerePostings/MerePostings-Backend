@@ -53,6 +53,12 @@ router.patch(
     propertyController.updateViewedListingSteps,
 );
 
+router.get(
+    "/:listingId/viewed-listing-steps/completion",
+    verifyFirebaseToken,
+    propertyController.getViewedStepCompletionStatus,
+);
+
 router.post(
     "/create-client-secret/:listingId",
     verifyFirebaseToken,

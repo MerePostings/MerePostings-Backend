@@ -7,6 +7,10 @@ const {ADDONS_BY_ID} = require("../data/addons");
 const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
+const {
+  getViewedStepCompletion,
+  getListingCompletion,
+} = require("../validators/property/propertyFields");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
 
 const MEDIA_LIMITS = {
@@ -133,6 +137,14 @@ const propertyService = {
     }
 
     return steps;
+  },
+
+  getViewedStepCompletionStatus: async (userId, listingId) => {
+    const snap = await db.collection("properties").doc(listingId).get();
+    if (!snap.exists) throw new AppError("Property not found", 404);
+    const data = snap.data();
+    if (data.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+    return getViewedStepCompletion(data.fields || {}, data.viewedListingSteps || []);
   },
 
   initiateProperty: async (userId, body = {}) => {
@@ -621,6 +633,12 @@ const propertyService = {
     const invalidIds = selectedAddons.filter((id) => !ADDONS_BY_ID[id]);
     if (invalidIds.length > 0) {
       throw new AppError(`Unknown addon id(s): ${invalidIds.join(", ")}`, 400);
+    }
+
+    const listingCompletion = getListingCompletion(existing.fields || {});
+    if (!listingCompletion.complete) {
+      const missing = listingCompletion.missingFields.map((item) => item.field).join(", ");
+      throw new AppError(`Listing has incomplete required fields: ${missing}`, 400);
     }
 
     try {

@@ -446,6 +446,38 @@ describe("propertyService.updateViewedListingSteps", () => {
   });
 });
 
+describe("propertyService.getViewedStepCompletionStatus", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 404 when the listing doesn't exist", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+
+    await expect(
+        propertyService.getViewedStepCompletionStatus("user-1", "listing-1"),
+    ).rejects.toMatchObject({statusCode: 404});
+  });
+
+  test("returns missing required fields for viewed sections only", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        fields: {},
+        viewedListingSteps: ["basic-details"],
+      }),
+    });
+
+    const result = await propertyService.getViewedStepCompletionStatus("user-1", "listing-1");
+
+    expect(result.complete).toBe(false);
+    expect(result.missingFields).toEqual(
+        expect.arrayContaining([expect.objectContaining({field: "property-type"})]),
+    );
+  });
+});
+
 describe("propertyService.saveSelectedAddons", () => {
   beforeEach(() => {
     resetDbMock();
@@ -484,8 +516,27 @@ describe("propertyService.saveSelectedAddons", () => {
     expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
 
+  test("throws 400 when required listing fields are incomplete", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", fields: {}}),
+    });
+
+    await expect(
+        propertyService.saveSelectedAddons("user-1", "listing-1", ["professional_photography"]),
+    ).rejects.toMatchObject({statusCode: 400, message: expect.stringContaining("incomplete required fields")});
+    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
+  });
+
   test("happy path: persists the addon selection and clears the legacy beforeLive field", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        status: "draft",
+        fields: {"property-type": "detached", "basement": false},
+      }),
+    });
     dbRefs.docRef.update.mockResolvedValueOnce(undefined);
 
     const result = await propertyService.saveSelectedAddons("user-1", "listing-1", ["professional_photography"]);
@@ -497,7 +548,14 @@ describe("propertyService.saveSelectedAddons", () => {
   });
 
   test("throws 500 when the Firestore write fails", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        status: "draft",
+        fields: {"property-type": "detached", "basement": false},
+      }),
+    });
     dbRefs.docRef.update.mockRejectedValueOnce(new Error("firestore down"));
 
     await expect(

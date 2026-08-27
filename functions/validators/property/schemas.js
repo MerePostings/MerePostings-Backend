@@ -1,6 +1,6 @@
 const Joi = require("joi");
 const {ADDONS_BY_ID} = require("../../data/addons");
-const {LISTING_STEP_IDS} = require("../../utils/listingSteps");
+const {LISTING_STEP_IDS} = require("./propertyFields");
 
 const initiatePropertySchema = Joi.object({
   occupancyType: Joi.string().valid("owner_occupied", "tenant_occupied", "vacant").optional(),

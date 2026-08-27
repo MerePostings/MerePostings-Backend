@@ -20,12 +20,20 @@ const propertyController = {
   }),
 
   updateViewedListingSteps: asyncErrorHandler(async (req, res) => {
-    const steps = await propertyService.updateViewedListingSteps(
+    const viewedListingSteps = await propertyService.updateViewedListingSteps(
         req.user.uid,
         req.params.listingId,
         req.body.steps,
     );
-    res.status(200).json({success: true, viewedListingSteps: steps});
+    res.status(200).json({success: true, viewedListingSteps});
+  }),
+
+  getViewedStepCompletionStatus: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.getViewedStepCompletionStatus(
+        req.user.uid,
+        req.params.listingId,
+    );
+    res.status(200).json(result);
   }),
 
   getListing: asyncErrorHandler(async (req, res) => {
