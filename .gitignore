@@ -1,3 +1,6 @@
 firestore-debug.log
 .claude*
 claude*
+
+functions/schemas/form.html
+functions/schemas/generate-form.js
