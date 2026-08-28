@@ -1,38 +1,36 @@
-const Joi = require("joi");
+const {z} = require("zod");
 const {TIME_OF_DAY} = require("../../data/actionTypes");
 
-const listActionsQuerySchema = Joi.object({
-  listingId: Joi.string().optional(),
-  status: Joi.string().valid("pending", "in_progress", "completed").optional(),
-  cursorId: Joi.string().optional(),
-  limit: Joi.number().integer().min(1).max(100).optional(),
+const listActionsQuerySchema = z.object({
+  listingId: z.string().min(1).optional(),
+  status: z.enum(["pending", "in_progress", "completed"]).optional(),
+  cursorId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const slotSchema = Joi.object({
-  date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
-  timeOfDay: Joi.string().valid(...TIME_OF_DAY).required(),
+const slotSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  timeOfDay: z.enum(TIME_OF_DAY),
 });
 
-// A negotiation "batch" is always exactly 3 distinct date+timeOfDay slots.
-// Reused as-is for both the user's schedule-request body and the admin's
-// counter-time body.
-const slotBatchSchema = Joi.array()
-    .items(slotSchema)
+const slotBatchSchema = z.array(slotSchema)
     .length(3)
-    .unique((a, b) => a.date === b.date && a.timeOfDay === b.timeOfDay)
-    .required();
+    .refine(
+        (slots) => new Set(slots.map((s) => `${s.date}|${s.timeOfDay}`)).size === slots.length,
+        {message: "slots must be unique"},
+    );
 
-const schedulingBatchSchema = Joi.object({
+const schedulingBatchSchema = z.object({
   slots: slotBatchSchema,
 });
 
-const adminCounterTimeSchema = Joi.object({
+const adminCounterTimeSchema = z.object({
   slots: slotBatchSchema,
-  note: Joi.string().max(500).allow("", null).optional(),
+  note: z.string().max(500).nullish(),
 });
 
-const adminFinalizeTimeSchema = Joi.object({
-  slotIndex: Joi.number().integer().min(0).max(2).required(),
+const adminFinalizeTimeSchema = z.object({
+  slotIndex: z.number().int().min(0).max(2),
 });
 
 module.exports = {

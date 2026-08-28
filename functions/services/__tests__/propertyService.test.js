@@ -629,7 +629,7 @@ describe("propertyService.saveSelectedAddons", () => {
     ).rejects.toMatchObject({statusCode: 409});
   });
 
-  test("throws 400 for an unknown addon id even if Joi validation was bypassed", async () => {
+  test("throws 400 for an unknown addon id even if schema validation was bypassed", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
 
     await expect(

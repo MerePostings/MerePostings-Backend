@@ -1,17 +1,17 @@
-const Joi = require("joi");
+const {z} = require("zod");
 const {NOTIFICATION_TYPES} = require("../../data/notificationTypes");
 
-const listNotificationsQuerySchema = Joi.object({
-  cursorId: Joi.string().optional(),
-  limit: Joi.number().integer().min(1).max(100).optional(),
+const listNotificationsQuerySchema = z.object({
+  cursorId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const preferencesPatchSchema = Joi.object(
+const preferencesPatchSchema = z.object(
     NOTIFICATION_TYPES.reduce((schema, type) => {
-      schema[type] = Joi.boolean();
+      schema[type] = z.boolean().optional();
       return schema;
     }, {}),
-).min(1);
+).refine((obj) => Object.keys(obj).length >= 1, {message: "at least one preference must be provided"});
 
 module.exports = {
   listNotificationsQuerySchema,

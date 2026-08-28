@@ -5,6 +5,7 @@ const stripeService = require("../services/stripeService");
 const AppError = require("../utils/AppError");
 const Busboy = require("busboy");
 const {ADDONS} = require("../data/addons");
+const {buildPropertySchemaResponse} = require("../utils/buildPropertySchemaResponse");
 
 const propertyController = {
 
@@ -149,6 +150,10 @@ const propertyController = {
 
   getAddons: asyncErrorHandler(async (req, res) => {
     res.status(200).json(ADDONS);
+  }),
+
+  getPropertySchema: asyncErrorHandler(async (req, res) => {
+    res.status(200).json(buildPropertySchemaResponse());
   }),
 
   getListingProcess: asyncErrorHandler(async (req, res) => {

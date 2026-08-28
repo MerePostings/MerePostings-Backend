@@ -1,6 +1,6 @@
 const {draftFieldEnvelopeSchema} = require("../validators/property/schemas");
 const {getFieldDefinition} = require("../validators/property/fieldRegistry");
-const formatJoiError = require("../utils/formatJoiError");
+const formatValidationError = require("../utils/formatValidationError");
 
 /**
  * Validates the draft auto-save payload in two passes:
@@ -17,15 +17,13 @@ const formatJoiError = require("../utils/formatJoiError");
  *   { propertyType, fieldName, fieldValue, path, dbKey }
  */
 const validateDraftField = (req, res, next) => {
-  const {error: envelopeError, value: envelope} = draftFieldEnvelopeSchema.validate(req.body, {
-    abortEarly: false,
-  });
+  const envelopeResult = draftFieldEnvelopeSchema.safeParse(req.body);
 
-  if (envelopeError) {
-    return res.status(400).json({success: false, errors: formatJoiError(envelopeError)});
+  if (!envelopeResult.success) {
+    return res.status(400).json({success: false, errors: formatValidationError(envelopeResult.error)});
   }
 
-  const {propertyType, fieldName, fieldValue} = envelope;
+  const {propertyType, fieldName, fieldValue} = envelopeResult.data;
   const fieldDef = getFieldDefinition(propertyType, fieldName);
 
   if (!fieldDef) {
@@ -40,19 +38,16 @@ const validateDraftField = (req, res, next) => {
     });
   }
 
-  const {error: valueError, value: validatedValue} = fieldDef.schema.validate(fieldValue, {
-    abortEarly: false,
-    convert: true,
-  });
+  const valueResult = fieldDef.schema.safeParse(fieldValue);
 
-  if (valueError) {
-    return res.status(400).json({success: false, errors: formatJoiError(valueError, fieldName)});
+  if (!valueResult.success) {
+    return res.status(400).json({success: false, errors: formatValidationError(valueResult.error, fieldName)});
   }
 
   req.validatedField = {
     propertyType,
     fieldName,
-    fieldValue: validatedValue,
+    fieldValue: valueResult.data,
     path: fieldDef.path,
     dbKey: fieldDef.dbKey,
   };

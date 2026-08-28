@@ -978,9 +978,9 @@ const propertyService = {
       throw new AppError("Cannot edit a listing that has already been submitted", 409);
     }
 
-    // Belt-and-suspenders: Joi already checked these against ADDONS_BY_ID
-    // at the route level, but this is the layer that actually writes to
-    // Firestore and feeds Stripe pricing, so re-check here too.
+    // Belt-and-suspenders: the Zod schema already checked these against
+    // ADDONS_BY_ID at the route level, but this is the layer that actually
+    // writes to Firestore and feeds Stripe pricing, so re-check here too.
     const invalidIds = selectedAddons.filter((id) => !ADDONS_BY_ID[id]);
     if (invalidIds.length > 0) {
       throw new AppError(`Unknown addon id(s): ${invalidIds.join(", ")}`, 400);
