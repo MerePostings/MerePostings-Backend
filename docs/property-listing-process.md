@@ -1,59 +1,166 @@
-# IMPORTANT
-After changing any part of the schema, bump `PROPERTY_SCHEMA_VERSION` in [`fieldRegistry.js`](../functions/validators/property/fieldRegistry.js).
+# Listing process (frontend)
 
-# Important property listing endpoints:
+Base path: `/v1/property`
 
-## GET /schema
-Fetch the JSON schema of the listing process for validation.
+Rule: **empty required fields are OK until checkout. Invalid values are never stored.**
 
-Response includes:
-- `version` — from `PROPERTY_SCHEMA_VERSION` in [`fieldRegistry.js`](../functions/validators/property/fieldRegistry.js); bump when registry changes
-- `steps` — valid funnel step IDs per property type (same as field `path` / storage location, e.g. `garage`, `contact`)
-- `fieldsByStep` — fields grouped by step ID for each property type
-- `commonFields` / `propertyTypeFields` — flat field index with `path`, `step`, `dbKey`, `schema`
+Schema routes are public. Everything else needs a Firebase token + verified email.
 
-## GET /schema/version
-Fetch the version of the schema before fetching the schema itself. (for caching purposes)
+---
 
-Version constant lives in [`fieldRegistry.js`](../functions/validators/property/fieldRegistry.js) as `PROPERTY_SCHEMA_VERSION`.
+## Flow
 
-## POST /initiate
-Initiate a new property listing document under the `properties` collection.
+1. **Cache the schema**
+   - `GET /schema/version` → `{ version }`
+   - If local cache already has that version, use it.
+   - Otherwise `GET /schema` once and store the whole payload keyed by `version`.
+   - Compile Ajv from the cached field `schema` objects. Do not refetch per step.
 
-## PATCH /:listingId/listing-process
-Endpoint for updating the property details with field level validation.
+2. **Start a listing** — `POST /initiate` → `{ listingId }`
 
-## PUT /:listingId/viewed-steps
-The frontend sends the **full** viewed-step list every time. This endpoint **replaces** `viewedSteps` (it does not append). Completeness for the progress bar then checks required fields on **every** stored viewed step.
+3. **Walk the funnel**
+   - User may skip required fields and go to the next step.
+   - On leave: `PUT /:listingId/viewed-steps` with the **full** list of viewed steps (backend will overwrite, not append).
+   - If they typed something: validate with Ajv (reject invalid; allow empty required) then `PATCH /:listingId/listing-process`. Backend validates again and saves to the database.
 
-Step IDs match `steps` / `path` from `GET /schema` (e.g. `garage`, `contact`, `exterior`). Requires `propertyType` to be set on the listing.
+4. **Progress bar** — `GET /:listingId/viewed-steps/completion`
+   - Get incompleted **viewed** steps (empty required fields on steps they already opened).
+
+5. **Before payment**
+   - `GET /:listingId/listing-process/completion` — every required field for the property type (including never-viewed steps). Show what's missing.
+   - `POST /create-client-secret/:listingId` runs the same check. Incomplete → `400` with `errors`. Payment does not start.
+
+Reload a draft with `GET /:listingId/listing-process` (`fields` + `viewedSteps`).
+
+---
+
+## Schema cache
+
+`GET /schema/version`
 
 ```json
-{ "viewedSteps": ["garage", "contact"] }
+{ "version": 1 }
 ```
 
-## GET /:listingId/viewed-steps/completion
-Check whether stored viewed steps have their required fields filled, scoped to the listing's `propertyType`.
+`GET /schema` (full document — cache this)
 
-## GET /:listingId/listing-process/completion
-Final completeness check: every required field for the listing's `propertyType`, including steps the user never viewed. Response: `{ complete, steps, missingFields }`.
+| Key | Use |
+|---|---|
+| `version` | cache key |
+| `steps[propertyType]` | valid step IDs (`garage`, `contact`, `exterior`, …) |
+| `fieldsByStep[propertyType][stepId]` | fields on that step + JSON Schema for Ajv |
+| `commonFields` / `propertyTypeFields` | flat field index (`path`, `step`, `dbKey`, `schema`) |
 
-`POST /create-client-secret/:listingId` runs this same check and returns 400 (with `errors`) if anything required is still empty. Payment does not start until the listing is complete.
+Step ID = storage path = `viewedSteps` entry.
 
-# The rest of the endpoints 
-TODO: Why are there so many GET endpoints for `listing-process` and `listingId`?
+When `version` changes, drop the old cache and refetch `/schema`.
 
-GET /:listingId/listing-process
-GET /listing-process/:listingId
-GET /listings/:id
+**Ajv:** use draft 2020-12 + `ajv-formats` (`format: "email"`). Mid-funnel: block invalid values only. Before pay: completeness endpoints.
 
-POST /create-client-secret/:listingId
-POST /request-refund/:listingId
-POST /:listingId/media/:mediaType
-PATCH /:listingId/media/:mediaType/reorder
-DELETE /:listingId/media/:mediaType
-PATCH /:listingId/virtual-tour-link
+---
 
-GET /get-addon-registry
-GET /get-owner-properties
-GET /get-owner-most-recent-property
+## Endpoints
+
+### `POST /initiate`
+
+Creates the listing. Optional `{ "occupancyType": "vacant" }`.
+
+### `GET /:listingId/listing-process`
+
+```json
+{
+  "process": {
+    "listingId": "…",
+    "propertyType": "detached",
+    "fields": { "garage": { "garageType": "attached" } },
+    "viewedSteps": ["garage", "contact"],
+    "propertyStatus": "draft"
+  }
+}
+```
+
+### `PATCH /:listingId/listing-process`
+
+Nested by step/path. Only sent fields are validated and saved. Omit a required field → it stays empty. Invalid value → `400`.
+
+```json
+{
+  "propertyType": "detached",
+  "garage": { "garageType": "attached" },
+  "contact": { "sellerEmail": "jane@example.com" }
+}
+```
+
+`propertyType` is required on the first save (or already on the listing). Changing type after it’s set → `409`.
+
+### `PUT /:listingId/viewed-steps`
+
+Send the **complete** list every time. Replaces what’s stored. `propertyType` must already be set.
+
+```json
+{ "viewedSteps": ["exterior", "garage", "contact"] }
+```
+
+Unknown step ID → `400`.
+
+### `GET /:listingId/viewed-steps/completion`
+
+Progress bar: required fields on **stored viewed steps** only.
+
+```json
+{
+  "listingId": "…",
+  "propertyType": "detached",
+  "viewedSteps": ["garage", "contact"],
+  "steps": [
+    { "stepId": "garage", "applicable": true, "complete": true, "missingFields": [] },
+    { "stepId": "contact", "applicable": true, "complete": false, "missingFields": ["contact.sellerFullName"] }
+  ]
+}
+```
+
+### `GET /:listingId/listing-process/completion`
+
+Final check: **all** required fields for the type.
+
+```json
+{
+  "listingId": "…",
+  "propertyType": "detached",
+  "complete": false,
+  "missingFields": ["pricing.askingPrice", "contact.sellerFullName"],
+  "steps": [{ "stepId": "contact", "applicable": true, "complete": false, "missingFields": ["contact.sellerFullName"] }]
+}
+```
+
+Needs `propertyType` on the listing.
+
+### `POST /create-client-secret/:listingId`
+
+`{ "selectedAddons": [] }` then Stripe client secret. **Blocked** until listing completion is true.
+
+Incomplete:
+
+```json
+{
+  "message": "Listing has incomplete required fields",
+  "errors": [{ "field": "contact.sellerFullName", "message": "Required" }]
+}
+```
+
+---
+
+## Also used in this funnel
+
+| Method | Path |
+|---|---|
+| GET | `/get-addon-registry` |
+| GET | `/listings/:id` |
+| GET | `/get-owner-properties` |
+| GET | `/get-owner-most-recent-property` |
+| POST | `/:listingId/media/:mediaType` |
+| PATCH | `/:listingId/media/:mediaType/reorder` |
+| DELETE | `/:listingId/media/:mediaType` |
+| PATCH | `/:listingId/virtual-tour-link` |
+| POST | `/request-refund/:listingId` |
+| GET | `/listing-process/:listingId` (post-submit progress tracker — not the funnel) |
