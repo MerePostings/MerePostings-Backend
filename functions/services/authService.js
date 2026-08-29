@@ -22,6 +22,10 @@ const authService = {
         throw new AppError("Please fill in all of the required fields.", 400);
       }
 
+      if (termsAccepted !== true) {
+        throw new AppError("You must accept the Terms of Service to sign up.", 400);
+      }
+
       const issues = [];
       const SPECIAL = /[!@#$%^&*()_+\-=[\]{}|;:",./<>?]/;
 
@@ -45,7 +49,8 @@ const authService = {
         existingUser = await firebaseAdmin.auth().getUserByEmail(email);
       } catch (error) {
         if (error.code !== "auth/user-not-found") {
-          throw new AppError(error.message || "Failed to sign up. Please try agian.", error.statusCode || 500); // unexpected error
+          logger.error("[auth] Unexpected error checking for existing user:", error);
+          throw new AppError("Failed to sign up. Please try again.", 500); // unexpected error
         }
       }
 
@@ -70,11 +75,8 @@ const authService = {
         ...(marketingOptIn && {
           marketing: true,
         }),
-
-        ...(termsAccepted && {
-          termsVersion: 1,
-          acceptedDate: FieldValue.serverTimestamp(),
-        }),
+        termsVersion: 1,
+        acceptedDate: FieldValue.serverTimestamp(),
       });
 
       createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});
@@ -109,6 +111,31 @@ const authService = {
         throw new AppError(err.message, err.statusCode);
       }
     }
+  },
+
+  /**
+     * Called by an authenticated-but-unverified user from the "verify your
+     * email" gate screen. Uses req.user.uid (from verifyFirebaseToken) rather
+     * than trusting a client-supplied email, so a signed-in user can only
+     * ever resend to their own address.
+     */
+  resendVerificationEmail: async (uid) => {
+    const userRecord = await firebaseAdmin.auth().getUser(uid);
+
+    if (userRecord.emailVerified) {
+      throw new AppError("This email address is already verified.", 400);
+    }
+
+    const actionCodeSettings = {
+      url: process.env.FRONTEND_URL,
+      handleCodeInApp: true,
+    };
+
+    const emailVerificationLink = await firebaseAdmin
+        .auth()
+        .generateEmailVerificationLink(userRecord.email, actionCodeSettings);
+
+    await sendVerificationEmail(userRecord.email, emailVerificationLink, userRecord.displayName?.split(" ")[0] || "there");
   },
 
 };

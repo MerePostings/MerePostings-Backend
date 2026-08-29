@@ -43,7 +43,6 @@ app.use("/v1/notification", notificationRoutes);
 app.use("/v1/action", actionRoutes);
 app.use("/v1/dashboard", dashboardRoutes);
 app.use('/v1/contact', mailRoutes)
-app.use("/v1/schema", schemaRoutes);
 
 app.use(handleError);
 

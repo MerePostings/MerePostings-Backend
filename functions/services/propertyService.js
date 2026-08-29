@@ -11,6 +11,7 @@ const {
   getViewedStepCompletion,
   getListingCompletion,
 } = require("../validators/property/propertyFields");
+const {ACTION_TARGETS} = require("../data/actionTargets");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
 
 const MEDIA_LIMITS = {
@@ -245,7 +246,8 @@ const propertyService = {
             message: "Your listing has been submitted and is now being reviewed.",
             listingId,
             listingAddress: buildAddressName(data.location || {}),
-            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionTarget: ACTION_TARGETS.LISTING_DETAIL,
+            actionParams: {listingId},
             actionLabel: "View Listing",
             sendEmail: false,
           });
@@ -334,7 +336,8 @@ const propertyService = {
         logger.error("[actions] Failed to auto-complete upload action:", actionErr);
       }
     } catch (firebaseErr) {
-      throw new AppError(firebaseErr.message || "Failed to upload to Firebase", 500);
+      logger.error("[property] Failed to upload media:", firebaseErr);
+      throw new AppError("Failed to upload files. Please try again.", 500);
     }
 
     return mediaUrls;
@@ -413,8 +416,9 @@ const propertyService = {
         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
       };
     } catch (e) {
+      if (e instanceof AppError) throw e;
       logger.error("Error in getListing:", e);
-      throw new AppError(`Failed to fetch listing: ${e.message}`, 500);
+      throw new AppError("Failed to fetch listing. Please try again.", 500);
     }
   },
 
@@ -435,7 +439,7 @@ const propertyService = {
       return properties;
     } catch (e) {
       logger.error("Error in getOwnerProperty:", e);
-      throw new AppError(`Failed to fetch owner properties: ${e.message}`, 500);
+      throw new AppError("Failed to fetch owner properties. Please try again.", 500);
     }
   },
 
@@ -478,7 +482,8 @@ const propertyService = {
       return finalMedia;
     } catch (e) {
       if (e instanceof AppError) throw e;
-      throw new AppError(e.message || "Failed to reorder media", 500);
+      logger.error("[property] Failed to reorder media:", e);
+      throw new AppError("Failed to reorder media. Please try again.", 500);
     }
   },
 
@@ -540,7 +545,7 @@ const propertyService = {
       };
     } catch (e) {
       logger.error("Error in getOwnerMostRecentProperty:", e);
-      throw new AppError(`Failed to fetch most recent owner property: ${e.message}`, 500);
+      throw new AppError("Failed to fetch most recent owner property. Please try again.", 500);
     }
   },
 
@@ -567,7 +572,7 @@ const propertyService = {
     } catch (e) {
       if (e instanceof AppError) throw e;
       logger.error("Error marking step completed:", e);
-      throw new AppError(`Failed to mark step as completed: ${e.message}`, 500);
+      throw new AppError("Failed to mark step as completed. Please try again.", 500);
     }
   },
 
@@ -594,7 +599,7 @@ const propertyService = {
     } catch (e) {
       if (e instanceof AppError) throw e;
       logger.error("Error marking step incomplete:", e);
-      throw new AppError(`Failed to mark step as incomplete: ${e.message}`, 500);
+      throw new AppError("Failed to mark step as incomplete. Please try again.", 500);
     }
   },
 
@@ -642,7 +647,7 @@ const propertyService = {
     } catch (e) {
       if (e instanceof AppError) throw e;
       logger.error("Error in getProgressTracker:", e);
-      throw new AppError(`Failed to fetch progress tracker: ${e.message}`, 500);
+      throw new AppError("Failed to fetch progress tracker. Please try again.", 500);
     }
   },
 

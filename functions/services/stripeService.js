@@ -70,8 +70,8 @@ const stripeService = {
 
       return paymentIntent.client_secret;
     } catch (e) {
-      logger.error(e);
-      throw new AppError(e.message || "Failed to subscribe", e.statusCode || 500);
+      logger.error("[stripe] Failed to create checkout session:", e);
+      throw new AppError("Failed to start checkout. Please try again.", 500);
     }
   },
 
@@ -184,7 +184,9 @@ const stripeService = {
         createdAt: FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      throw new AppError(e.message || "Failed to process refund", e.statusCode);
+      if (e instanceof AppError) throw e;
+      logger.error("[stripe] Failed to process refund:", e);
+      throw new AppError("Failed to process refund. Please contact support.", 500);
     }
   },
 };

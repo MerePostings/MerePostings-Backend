@@ -6,6 +6,7 @@ const archiver = require("archiver");
 const axios = require("axios");
 const {PassThrough} = require("stream");
 const notificationService = require("./notificationService");
+const {ACTION_TARGETS} = require("../data/actionTargets");
 
 const STATUS_SEVERITY = {draft: "info", pending: "info", active: "success", closed: "info"};
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
@@ -36,7 +37,8 @@ const adminService = {
 
       return isAdmin;
     } catch (e) {
-      throw new AppError(e.message || "Failed to Login", e.statusCode || 500);
+      logger.error("[admin] Login check failed:", e);
+      throw new AppError("Failed to log in. Please try again.", 500);
     }
   },
 
@@ -135,7 +137,8 @@ const adminService = {
         recentTransactions,
       };
     } catch (e) {
-      throw new AppError(e.message || "Failed to fetch dashboard stats", 500);
+      logger.error("[admin] Failed to fetch dashboard stats:", e);
+      throw new AppError("Failed to fetch dashboard stats. Please try again.", 500);
     }
   },
 
@@ -172,7 +175,8 @@ const adminService = {
 
       return {users: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      throw new AppError(e.message || "Failed to fetch users", 500);
+      logger.error("[admin] Failed to fetch users:", e);
+      throw new AppError("Failed to fetch users. Please try again.", 500);
     }
   },
 
@@ -216,7 +220,8 @@ const adminService = {
 
       return {transactions: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      throw new AppError(e.message || "Failed to fetch transactions", 500);
+      logger.error("[admin] Failed to fetch transactions:", e);
+      throw new AppError("Failed to fetch transactions. Please try again.", 500);
     }
   },
 
@@ -282,8 +287,8 @@ const adminService = {
 
       return {listings: paginated, total, page: pageNum, limit: pageSize};
     } catch (e) {
-      logger.info(e);
-      throw new AppError(e.message || "Failed to fetch listings", 500);
+      logger.error("[admin] Failed to fetch listings:", e);
+      throw new AppError("Failed to fetch listings. Please try again.", 500);
     }
   },
 
@@ -295,7 +300,9 @@ const adminService = {
       const d = doc.data();
       return {id: doc.id, ...d};
     } catch (e) {
-      throw new AppError(e.message || "Failed to fetch listing", e.statusCode || 500);
+      if (e instanceof AppError) throw e;
+      logger.error("[admin] Failed to fetch listing:", e);
+      throw new AppError("Failed to fetch listing. Please try again.", 500);
     }
   },
 
@@ -321,7 +328,8 @@ const adminService = {
 
       return {success: true};
     } catch (e) {
-      throw new AppError(e.message || "Failed to update listing", 500);
+      logger.error("[admin] Failed to update listing:", e);
+      throw new AppError("Failed to update listing. Please try again.", 500);
     }
   },
 
@@ -366,7 +374,8 @@ const adminService = {
             message: `Your listing status has been updated to "${humanizeStatus(status)}".`,
             listingId,
             listingAddress: addressParts.join(" ") || null,
-            actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            actionTarget: ACTION_TARGETS.LISTING_DETAIL,
+            actionParams: {listingId},
             actionLabel: "View Listing",
           });
         } catch (notifyErr) {
@@ -377,7 +386,8 @@ const adminService = {
       return {success: true};
     } catch (e) {
       if (e instanceof AppError) throw e;
-      throw new AppError(e.message || "Failed to update status", 500);
+      logger.error("[admin] Failed to update status:", e);
+      throw new AppError("Failed to update status. Please try again.", 500);
     }
   },
 
@@ -465,8 +475,9 @@ const adminService = {
 
       return {folderName, zipStream};
     } catch (e) {
+      if (e instanceof AppError) throw e;
       logger.error("Error in downloadPropertyAsZip:", e);
-      throw new AppError(`Failed to create property zip: ${e.message}`, 500);
+      throw new AppError("Failed to create property zip. Please try again.", 500);
     }
   },
 };

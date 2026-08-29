@@ -5,6 +5,7 @@ const AppError = require("../utils/AppError");
 const {FieldValue} = require("firebase-admin/firestore");
 const {getRequiredActionsForListing} = require("../data/actionRequirements");
 const {TIME_OF_DAY_WINDOWS} = require("../data/actionTypes");
+const {ACTION_TARGETS} = require("../data/actionTargets");
 const notificationService = require("./notificationService");
 
 const TIMEZONE = "America/Toronto";
@@ -111,7 +112,8 @@ const actionService = {
             title: blueprint.title,
             description: blueprint.description,
             ctaLabel: blueprint.ctaLabel,
-            ctaUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+            ctaTarget: ACTION_TARGETS.LISTING_DETAIL,
+            ctaParams: {listingId},
             progressStepId: blueprint.progressStepId,
             requiresScheduling: blueprint.requiresScheduling,
             schedulingRequest: null,
@@ -149,7 +151,8 @@ const actionService = {
           message: `You have ${createdTitles.length} action${createdTitles.length > 1 ? "s" : ""} to complete before your listing goes live.`,
           listingId,
           listingAddress,
-          actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${listingId}`,
+          actionTarget: ACTION_TARGETS.ACTIONS_TAB,
+          actionParams: {listingId},
           actionLabel: "View Actions",
           sendEmail: false,
         });
@@ -344,7 +347,8 @@ const actionService = {
         message: `We've proposed 3 new times for "${data.title}". Please review and pick one, or suggest different times.`,
         listingId: data.listingId,
         listingAddress: data.listingAddress,
-        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${data.listingId}`,
+        actionTarget: ACTION_TARGETS.ACTIONS_TAB,
+        actionParams: {listingId: data.listingId},
         actionLabel: "Review Times",
         sendEmail: true,
       });
@@ -448,8 +452,9 @@ const actionService = {
         message: `Your appointment for "${data.title}" is confirmed.`,
         listingId: data.listingId,
         listingAddress: data.listingAddress,
-        actionUrl: `${process.env.FRONTEND_URL}/account/my-listings/${data.listingId}`,
-        actionLabel: "View Listing",
+        actionTarget: ACTION_TARGETS.APPOINTMENTS,
+        actionParams: {listingId: data.listingId},
+        actionLabel: "View Appointment",
         sendEmail: true,
       });
     } catch (notifyErr) {
