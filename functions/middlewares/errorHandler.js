@@ -1,19 +1,21 @@
 const logger = require("firebase-functions/logger");
 
 const devError = (err, res) => {
-  res.status(err.statusCode).json({
+  const payload = {
     message: err.message,
     stackTrace: err.stack,
     err: err,
-  });
+  };
+  if (err.errors) payload.errors = err.errors;
+  res.status(err.statusCode).json(payload);
 };
 
 const prodError = (err, res) => {
   logger.error(err);
   if (err.isOperational) {
-    res.status(err.statusCode).json({
-      message: err.message,
-    });
+    const payload = {message: err.message};
+    if (err.errors) payload.errors = err.errors;
+    res.status(err.statusCode).json(payload);
   } else {
     res.status(500).json({
       message: "Something went wrong! Please try again later.",

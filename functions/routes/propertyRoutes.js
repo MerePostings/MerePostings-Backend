@@ -8,6 +8,11 @@ const {
   initiatePropertySchema, selectedAddonsSchema,
   listingProcessPatchSchema,
 } = require("../validators/property/schemas.js");
+const {PROPERTY_SCHEMA_VERSION} = require("../utils/buildPropertySchemaResponse");
+
+router.get("/schema/version", (_req, res) => {
+  res.status(200).json({version: PROPERTY_SCHEMA_VERSION});
+});
 
 router.get(
     "/schema",
@@ -33,13 +38,6 @@ router.get(
     verifyFirebaseToken,
     requireVerifiedEmail,
     propertyController.getOwnerMostRecentProperty,
-);
-
-router.get(
-    "/get-owner-most-recent-process",
-    verifyFirebaseToken,
-    requireVerifiedEmail,
-    propertyController.getOwnerMostRecentProcess,
 );
 
 router.get(

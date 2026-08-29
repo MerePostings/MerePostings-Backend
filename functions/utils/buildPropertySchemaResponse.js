@@ -3,6 +3,9 @@ const {propertyTypeFields, commonFields} = require("../validators/property/field
 
 const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
 
+/** Bump when fieldRegistry shape changes in a FE-breaking way. */
+const PROPERTY_SCHEMA_VERSION = 1;
+
 function toFieldJsonSchema(schema) {
   const jsonSchema = z.toJSONSchema(schema, {io: "input"});
   delete jsonSchema.$schema;
@@ -48,6 +51,7 @@ function buildPropertySchemaResponse() {
   }
 
   cachedResponse = deepFreeze({
+    version: PROPERTY_SCHEMA_VERSION,
     $schema: JSON_SCHEMA_DIALECT,
     propertyTypes,
     commonFields: mapFields(commonFields),
@@ -57,4 +61,4 @@ function buildPropertySchemaResponse() {
   return cachedResponse;
 }
 
-module.exports = {buildPropertySchemaResponse};
+module.exports = {buildPropertySchemaResponse, PROPERTY_SCHEMA_VERSION};

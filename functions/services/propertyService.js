@@ -8,7 +8,13 @@ const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
 const {ACTION_TARGETS} = require("../data/actionTargets");
-const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
+const {
+  assembleListingFields,
+  buildFirestoreUpdate,
+  extractFieldPatches,
+  resolvePropertyType,
+  validateFieldPatches,
+} = require("../utils/listingProcessFields");
 
 const MEDIA_LIMITS = {
   photos: {
@@ -36,76 +42,8 @@ async function assertListingOwnership(listingId, uid) {
   if (snap.data().ownerId !== uid) throw new AppError("Unauthorized access to this property", 403);
 }
 
-/** Flat listing-process fields stored on the property root. */
-const PROCESS_FIELD_KEYS = [
-  "listedWithOtherBrokerage",
-  "supportTier",
-  "occupancy",
-  "propertyType",
-  "askingPrice",
-  "requestListingPriceReview",
-  "selectedAddons",
-  "walkthroughAnswers",
-  "sellerContact",
-  "ownership",
-  "mailingAddress",
-  "propertyDetails",
-  "featuresUpgrades",
-  "buyerCopy",
-  "sellerConfirmations",
-];
-
-/** Normalize incoming PATCH state → flat process fields. */
-function normalizeIncomingState(state) {
-  if (!state || typeof state !== "object") return {};
-  const out = {};
-  if (typeof state.furthestMajorIndex === "number") {
-    out.furthestMajorIndex = state.furthestMajorIndex;
-  }
-  for (const k of PROCESS_FIELD_KEYS) {
-    if (k in state) out[k] = state[k];
-  }
-  return out;
-}
-
-/** Assemble listing-process `state` from property root. */
-function assembleProcessState(prop) {
-  const state = {};
-  if (typeof prop.furthestMajorIndex === "number") {
-    state.furthestMajorIndex = prop.furthestMajorIndex;
-  }
-  for (const k of PROCESS_FIELD_KEYS) {
-    if (k in prop) state[k] = prop[k];
-  }
-  return state;
-}
-
 function getSelectedAddons(prop) {
   return Array.isArray(prop?.selectedAddons) ? prop.selectedAddons : [];
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Deep-merge plain objects for listing-process nested fields.
- * Arrays / scalars / null replace. Used so sparse nested PATCHes keep siblings.
- */
-function deepMergePlainObjects(prev, next) {
-  if (!isPlainObject(next)) return next;
-  if (!isPlainObject(prev)) return {...next};
-  const out = {...prev};
-  for (const key of Object.keys(next)) {
-    const n = next[key];
-    const p = prev[key];
-    if (isPlainObject(n) && isPlainObject(p)) {
-      out[key] = deepMergePlainObjects(p, n);
-    } else {
-      out[key] = n;
-    }
-  }
-  return out;
 }
 
 const buildAddressName = (location) => {
@@ -141,7 +79,6 @@ const propertyService = {
         ownerId: userId,
         status: "initiated",
         paid: false,
-        furthestMajorIndex: 0,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -161,15 +98,17 @@ const propertyService = {
     const prop = propSnap.data();
     if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
 
+    const propertyType = prop.propertyType;
     return {
       listingId,
-      state: assembleProcessState(prop),
+      propertyType: propertyType ?? null,
+      fields: propertyType ? assembleListingFields(prop, propertyType) : {},
       propertyStatus: prop.status,
       updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
     };
   },
 
-  saveListingProcess: async (userId, listingId, {state}) => {
+  saveListingProcess: async (userId, listingId, body) => {
     const propRef = db.collection("properties").doc(listingId);
     const propSnap = await propRef.get();
     if (!propSnap.exists) throw new AppError("Property not found", 404);
@@ -179,78 +118,32 @@ const propertyService = {
       throw new AppError("Cannot edit a listing that has already been submitted", 409);
     }
 
-    const incoming = state != null ? normalizeIncomingState(state) : {};
-    const prev = assembleProcessState(prop);
-
-    const nextState = {...prev};
-    if (typeof incoming.furthestMajorIndex === "number") {
-      nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
-    }
-    // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
-    for (const k of PROCESS_FIELD_KEYS) {
-      if (k in incoming) {
-        nextState[k] = deepMergePlainObjects(prev[k], incoming[k]);
-      }
+    const propertyType = resolvePropertyType(body, prop);
+    const patches = extractFieldPatches(body);
+    if (patches.length === 0) {
+      throw new AppError("No fields to update", 400);
     }
 
+    const validatedByPath = validateFieldPatches(propertyType, patches);
+    const fieldUpdate = buildFirestoreUpdate(prop, validatedByPath);
     const nextStatus = prop.status === "initiated" ? "draft" : prop.status;
+
     const update = {
+      ...fieldUpdate,
+      propertyType,
       status: nextStatus,
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    if (typeof nextState.furthestMajorIndex === "number") {
-      update.furthestMajorIndex = nextState.furthestMajorIndex;
-    }
-    for (const k of PROCESS_FIELD_KEYS) {
-      if (k in nextState) update[k] = nextState[k];
-    }
-
     await propRef.update(update);
 
+    const merged = {...prop, ...fieldUpdate, propertyType};
     return {
       listingId,
-      state: nextState,
+      propertyType,
+      fields: assembleListingFields(merged, propertyType),
       propertyStatus: nextStatus,
     };
-  },
-
-  getOwnerMostRecentProcess: async (userId) => {
-    try {
-      const snapshot = await db
-          .collection("properties")
-          .where("ownerId", "==", userId)
-          .get();
-
-      if (snapshot.empty) {
-        return {process: null};
-      }
-
-      const docs = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            const updatedAt = data.updatedAt?.toDate?.() || data.updatedAt || new Date(0);
-            return {id: doc.id, data, updatedAt: new Date(updatedAt).getTime()};
-          })
-          .sort((a, b) => b.updatedAt - a.updatedAt);
-
-      for (const {id, data} of docs) {
-        if (!EDITABLE_STATUSES.has(data.status)) continue;
-        return {
-          process: {
-            listingId: id,
-            state: assembleProcessState(data),
-            propertyStatus: data.status,
-            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-          },
-        };
-      }
-
-      return {process: null};
-    } catch (e) {
-      logger.error("Error in getOwnerMostRecentProcess:", e);
-      throw new AppError("Failed to fetch most recent listing process. Please try again.", 500);
-    }
   },
 
   /**

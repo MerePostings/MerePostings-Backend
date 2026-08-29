@@ -57,25 +57,12 @@ describe("selectedAddonsSchema", () => {
 });
 
 describe("listingProcessPatchSchema", () => {
-  test("accepts state alone", () => {
-    const {error} = listingProcessPatchSchema.validate({state: {anything: "goes"}});
-    expect(error).toBeUndefined();
-  });
-
-  test("accepts state with furthestMajorIndex inside", () => {
+  test("accepts nested path sections with an optional propertyType", () => {
     const {error} = listingProcessPatchSchema.validate({
-      state: {furthestMajorIndex: 2, occupancy: "owner"},
+      propertyType: "detached",
+      garage: {garageType: "attached"},
+      interior: {bedroomsAboveGrade: 3},
     });
     expect(error).toBeUndefined();
-  });
-
-  test("rejects payload without state", () => {
-    const {error} = listingProcessPatchSchema.validate({});
-    expect(error).toBeDefined();
-  });
-
-  test("rejects non-object state", () => {
-    const {error} = listingProcessPatchSchema.validate({state: "nope"});
-    expect(error).toBeDefined();
   });
 });

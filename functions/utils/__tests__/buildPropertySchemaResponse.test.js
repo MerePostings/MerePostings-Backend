@@ -3,6 +3,10 @@ const {buildPropertySchemaResponse} = require("../buildPropertySchemaResponse");
 describe("buildPropertySchemaResponse", () => {
   const result = buildPropertySchemaResponse();
 
+  test("includes a monotonic schema version for FE cache busting", () => {
+    expect(result.version).toBe(1);
+  });
+
   test("lists every known property type, including aliases", () => {
     expect(result.propertyTypes).toEqual(expect.arrayContaining([
       "detached", "semiDetached", "condoApartment", "condoTownhouse",

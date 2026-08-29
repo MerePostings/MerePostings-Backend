@@ -23,8 +23,8 @@ const selectedAddonsSchema = Joi.object({
 });
 
 const listingProcessPatchSchema = Joi.object({
-  state: Joi.object().unknown(true).required(),
-});
+  propertyType: Joi.string().optional(),
+}).unknown(true);
 
 module.exports = {
   initiatePropertySchema,

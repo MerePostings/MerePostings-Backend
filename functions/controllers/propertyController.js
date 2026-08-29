@@ -158,11 +158,6 @@ const propertyController = {
     res.status(200).json({process});
   }),
 
-  getOwnerMostRecentProcess: asyncErrorHandler(async (req, res) => {
-    const result = await propertyService.getOwnerMostRecentProcess(req.user.uid);
-    res.status(200).json(result);
-  }),
-
   getProgressTracker: asyncErrorHandler(async (req, res) => {
     const result = await propertyService.getProgressTracker(req.user.uid, req.params.listingId);
     res.status(200).json(result);

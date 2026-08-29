@@ -164,8 +164,7 @@ const actionService = {
 
   /**
      * Actions are bounded per user (a handful per listing, created only at
-     * submission), so — like propertyService.getOwnerMostRecentProcess —
-     * filter/sort in memory rather than adding composite Firestore indexes
+     * submission), so filter/sort in memory rather than adding composite Firestore indexes
      * for the optional listingId/status filters.
      */
   listActions: async (userId, {listingId, status, cursorId, limit} = {}) => {
