@@ -24,16 +24,21 @@ Initiate a new property listing document under the `properties` collection.
 Endpoint for updating the property details with field level validation.
 
 ## PUT /:listingId/viewed-steps
-Replace the listing's viewed funnel steps. Step IDs match `steps` / `path` from `GET /schema` (e.g. `garage`, `contact`, `exterior`).
+The frontend sends the **full** viewed-step list every time. This endpoint **replaces** `viewedSteps` (it does not append). Completeness for the progress bar then checks required fields on **every** stored viewed step.
+
+Step IDs match `steps` / `path` from `GET /schema` (e.g. `garage`, `contact`, `exterior`). Requires `propertyType` to be set on the listing.
 
 ```json
 { "viewedSteps": ["garage", "contact"] }
 ```
 
-Stored flat on the property document as `viewedSteps`. Requires `propertyType` to be set on the listing.
-
 ## GET /:listingId/viewed-steps/completion
 Check whether stored viewed steps have their required fields filled, scoped to the listing's `propertyType`.
+
+## GET /:listingId/listing-process/completion
+Final completeness check: every required field for the listing's `propertyType`, including steps the user never viewed. Response: `{ complete, steps, missingFields }`.
+
+`POST /create-client-secret/:listingId` runs this same check and returns 400 (with `errors`) if anything required is still empty. Payment does not start until the listing is complete.
 
 # The rest of the endpoints 
 TODO: Why are there so many GET endpoints for `listing-process` and `listingId`?

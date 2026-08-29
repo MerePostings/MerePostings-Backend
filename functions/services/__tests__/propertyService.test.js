@@ -317,6 +317,79 @@ describe("propertyService.getViewedStepsCompletion", () => {
   });
 });
 
+const completeDetached = {
+  ownerId: "user-1",
+  propertyType: "detached",
+  pricing: {askingPrice: 500000},
+  location: {streetNumber: "1", streetName: "Main", municipality: "Toronto"},
+  buyerInfo: {buyersWillLove: "Light"},
+  occupancy: {occupancyStatus: "vacant"},
+  contact: {
+    sellerFullName: "Jane Doe",
+    sellerEmail: "jane@example.com",
+    sellerPhone: "555-1234",
+    preferredContactMethod: "email",
+  },
+  ownership: {isRegisteredOwner: true},
+};
+
+describe("propertyService.getListingCompletion", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 400 when propertyType is not set", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1"}),
+    });
+    await expect(
+        propertyService.getListingCompletion("user-1", "listing-1"),
+    ).rejects.toMatchObject({statusCode: 400});
+  });
+
+  test("reports incomplete required fields across all steps", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", propertyType: "detached"}),
+    });
+
+    const result = await propertyService.getListingCompletion("user-1", "listing-1");
+    expect(result.complete).toBe(false);
+    expect(result.missingFields).toEqual(expect.arrayContaining(["contact.sellerFullName"]));
+  });
+});
+
+describe("propertyService.assertListingComplete", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 400 with errors when required fields are missing", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", propertyType: "detached"}),
+    });
+
+    await expect(
+        propertyService.assertListingComplete("user-1", "listing-1"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Listing has incomplete required fields",
+    });
+  });
+
+  test("resolves when every required field is filled", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => completeDetached,
+    });
+
+    const result = await propertyService.assertListingComplete("user-1", "listing-1");
+    expect(result.complete).toBe(true);
+  });
+});
+
 describe("propertyService.uploadMedia", () => {
   beforeEach(() => {
     resetDbMock();

@@ -1,4 +1,4 @@
-const {getFieldsForStep} = require("../validators/property/fieldRegistry");
+const {getFieldsForStep, getKnownStepIds} = require("../validators/property/fieldRegistry");
 const {isRequiredSchema, readFieldValue, isFieldSatisfied} = require("./schemaFieldUtils");
 
 function checkStepCompletion(propertyType, stepId, prop) {
@@ -28,4 +28,15 @@ function checkViewedStepsCompletion(propertyType, viewedSteps, prop) {
   return viewedSteps.map((stepId) => checkStepCompletion(propertyType, stepId, prop));
 }
 
-module.exports = {checkStepCompletion, checkViewedStepsCompletion};
+/** Completeness for every step of the property type, not just viewed ones. */
+function checkListingCompletion(propertyType, prop) {
+  const steps = checkViewedStepsCompletion(propertyType, getKnownStepIds(propertyType), prop);
+  const missingFields = steps.flatMap((step) => step.missingFields);
+  return {
+    complete: missingFields.length === 0,
+    steps,
+    missingFields,
+  };
+}
+
+module.exports = {checkStepCompletion, checkViewedStepsCompletion, checkListingCompletion};

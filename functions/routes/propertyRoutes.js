@@ -56,6 +56,13 @@ router.post(
 );
 
 router.get(
+    "/:listingId/listing-process/completion",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    propertyController.getListingCompletion,
+);
+
+router.get(
     "/:listingId/listing-process",
     verifyFirebaseToken,
     requireVerifiedEmail,

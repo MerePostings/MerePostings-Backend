@@ -16,7 +16,7 @@ const {
   validateFieldPatches,
 } = require("../utils/listingProcessFields");
 const {getKnownStepIds, isValidPropertyType} = require("../validators/property/fieldRegistry");
-const {checkViewedStepsCompletion} = require("../utils/viewedStepsCompletion");
+const {checkViewedStepsCompletion, checkListingCompletion} = require("../utils/viewedStepsCompletion");
 
 const MEDIA_LIMITS = {
   photos: {
@@ -169,6 +169,31 @@ const propertyService = {
       viewedSteps,
       steps: checkViewedStepsCompletion(propertyType, viewedSteps, prop),
     };
+  },
+
+  getListingCompletion: async (userId, listingId) => {
+    const propSnap = await db.collection("properties").doc(listingId).get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+
+    const propertyType = prop.propertyType;
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      throw new AppError("propertyType must be set before checking listing completeness", 400);
+    }
+
+    const {complete, steps, missingFields} = checkListingCompletion(propertyType, prop);
+    return {listingId, propertyType, complete, steps, missingFields};
+  },
+
+  assertListingComplete: async (userId, listingId) => {
+    const result = await propertyService.getListingCompletion(userId, listingId);
+    if (!result.complete) {
+      const err = new AppError("Listing has incomplete required fields", 400);
+      err.errors = result.missingFields.map((field) => ({field, message: "Required"}));
+      throw err;
+    }
+    return result;
   },
 
   saveListingProcess: async (userId, listingId, body) => {
