@@ -6,9 +6,9 @@ const requireVerifiedEmail = require("../middlewares/requireVerifiedEmail");
 const validate = require("../middlewares/validate");
 const {
   initiatePropertySchema, selectedAddonsSchema,
-  listingProcessPatchSchema,
+  listingProcessPatchSchema, viewedStepsSchema,
 } = require("../validators/property/schemas.js");
-const {PROPERTY_SCHEMA_VERSION} = require("../utils/buildPropertySchemaResponse");
+const {PROPERTY_SCHEMA_VERSION} = require("../validators/property/fieldRegistry");
 
 router.get("/schema/version", (_req, res) => {
   res.status(200).json({version: PROPERTY_SCHEMA_VERSION});
@@ -68,6 +68,21 @@ router.patch(
     requireVerifiedEmail,
     validate(listingProcessPatchSchema),
     propertyController.saveListingProcess,
+);
+
+router.put(
+    "/:listingId/viewed-steps",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    validate(viewedStepsSchema),
+    propertyController.updateViewedSteps,
+);
+
+router.get(
+    "/:listingId/viewed-steps/completion",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    propertyController.getViewedStepsCompletion,
 );
 
 router.post(

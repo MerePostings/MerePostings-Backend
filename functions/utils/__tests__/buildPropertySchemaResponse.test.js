@@ -17,12 +17,26 @@ describe("buildPropertySchemaResponse", () => {
   test("commonFields includes askingPrice with its path/dbKey and a JSON Schema", () => {
     const field = result.commonFields.askingPrice;
     expect(field.path).toBe("pricing");
+    expect(field.step).toBe("pricing");
     expect(field.dbKey).toBe("askingPrice");
     expect(field.schema.type).toBe("number");
   });
 
   test("commonFields.sellerEmail publishes format: 'email' (not dropped by the TLD-plausibility refine)", () => {
     expect(result.commonFields.sellerEmail.schema.format).toBe("email");
+  });
+
+  test("steps lists valid funnel step IDs per property type", () => {
+    expect(result.steps.detached).toEqual(expect.arrayContaining([
+      "exterior", "garage", "interior", "systems", "basement", "additionalLivingSpaces",
+    ]));
+    expect(result.steps.detached).toContain("pricing"); // from commonFields
+  });
+
+  test("fieldsByStep groups fields under their step ID for each property type", () => {
+    expect(result.fieldsByStep.detached.garage.garageType.path).toBe("garage");
+    expect(result.fieldsByStep.detached.garage.garageType.step).toBe("garage");
+    expect(result.fieldsByStep.detached.pricing.askingPrice.path).toBe("pricing");
   });
 
   test("detached.garageType is an enum JSON Schema, no longer a bare GARAGE_OPTIONS list", () => {
@@ -98,6 +112,8 @@ describe("buildPropertySchemaResponse", () => {
     expect(Object.isFrozen(result.commonFields)).toBe(true);
     expect(Object.isFrozen(result.commonFields.askingPrice)).toBe(true);
     expect(Object.isFrozen(result.commonFields.askingPrice.schema)).toBe(true);
+    expect(Object.isFrozen(result.steps)).toBe(true);
+    expect(Object.isFrozen(result.fieldsByStep)).toBe(true);
 
     expect(() => {
       "use strict";

@@ -26,8 +26,13 @@ const listingProcessPatchSchema = Joi.object({
   propertyType: Joi.string().optional(),
 }).unknown(true);
 
+const viewedStepsSchema = Joi.object({
+  viewedSteps: Joi.array().items(Joi.string().min(1)).unique().required(),
+});
+
 module.exports = {
   initiatePropertySchema,
   listingProcessPatchSchema,
   selectedAddonsSchema,
+  viewedStepsSchema,
 };

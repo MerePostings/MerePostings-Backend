@@ -221,6 +221,102 @@ describe("propertyService.saveListingProcess", () => {
   });
 });
 
+describe("propertyService.updateViewedSteps", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 404 when the listing doc doesn't exist", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["garage"]),
+    ).rejects.toMatchObject({statusCode: 404});
+  });
+
+  test("throws 400 when propertyType is not set on the listing", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft"}),
+    });
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["garage"]),
+    ).rejects.toMatchObject({statusCode: 400});
+  });
+
+  test("throws 400 for an unknown step id", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["not-a-step"]),
+    ).rejects.toMatchObject({statusCode: 400});
+    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
+  });
+
+  test("happy path: replaces viewedSteps on the listing root", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.updateViewedSteps(
+        "user-1", "listing-1", ["garage", "contact"],
+    );
+
+    expect(result).toEqual({viewedSteps: ["garage", "contact"]});
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({viewedSteps: ["garage", "contact"]}),
+    );
+  });
+});
+
+describe("propertyService.getViewedStepsCompletion", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("returns completion for stored viewed steps", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        propertyType: "detached",
+        viewedSteps: ["contact"],
+        contact: {
+          sellerFullName: "Jane Doe",
+          sellerEmail: "jane@example.com",
+          sellerPhone: "555-1234",
+          preferredContactMethod: "email",
+        },
+      }),
+    });
+
+    const result = await propertyService.getViewedStepsCompletion("user-1", "listing-1");
+
+    expect(result.viewedSteps).toEqual(["contact"]);
+    expect(result.steps[0]).toMatchObject({stepId: "contact", complete: true});
+  });
+
+  test("reports missing required fields for an incomplete viewed step", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        propertyType: "detached",
+        viewedSteps: ["contact"],
+        contact: {},
+      }),
+    });
+
+    const result = await propertyService.getViewedStepsCompletion("user-1", "listing-1");
+
+    expect(result.steps[0].complete).toBe(false);
+    expect(result.steps[0].missingFields.length).toBeGreaterThan(0);
+  });
+});
+
 describe("propertyService.uploadMedia", () => {
   beforeEach(() => {
     resetDbMock();

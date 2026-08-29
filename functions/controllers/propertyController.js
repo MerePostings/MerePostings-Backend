@@ -158,6 +158,23 @@ const propertyController = {
     res.status(200).json({process});
   }),
 
+  updateViewedSteps: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.updateViewedSteps(
+        req.user.uid,
+        req.params.listingId,
+        req.body.viewedSteps,
+    );
+    res.status(200).json(result);
+  }),
+
+  getViewedStepsCompletion: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.getViewedStepsCompletion(
+        req.user.uid,
+        req.params.listingId,
+    );
+    res.status(200).json(result);
+  }),
+
   getProgressTracker: asyncErrorHandler(async (req, res) => {
     const result = await propertyService.getProgressTracker(req.user.uid, req.params.listingId);
     res.status(200).json(result);

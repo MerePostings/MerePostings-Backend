@@ -1,10 +1,13 @@
 const {z} = require("zod");
-const {propertyTypeFields, commonFields} = require("../validators/property/fieldRegistry");
+const {
+  propertyTypeFields,
+  commonFields,
+  PROPERTY_SCHEMA_VERSION,
+  getKnownStepIds,
+  getFieldsForPropertyType,
+} = require("../validators/property/fieldRegistry");
 
 const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
-
-/** Bump when fieldRegistry shape changes in a FE-breaking way. */
-const PROPERTY_SCHEMA_VERSION = 1;
 
 function toFieldJsonSchema(schema) {
   const jsonSchema = z.toJSONSchema(schema, {io: "input"});
@@ -12,16 +15,31 @@ function toFieldJsonSchema(schema) {
   return jsonSchema;
 }
 
+function mapFieldDef(fieldName, def) {
+  return {
+    path: def.path,
+    step: def.path,
+    dbKey: def.dbKey || fieldName,
+    schema: toFieldJsonSchema(def.schema),
+  };
+}
+
 function mapFields(fields) {
   const out = {};
   for (const [fieldName, def] of Object.entries(fields)) {
-    out[fieldName] = {
-      path: def.path,
-      dbKey: def.dbKey || fieldName,
-      schema: toFieldJsonSchema(def.schema),
-    };
+    out[fieldName] = mapFieldDef(fieldName, def);
   }
   return out;
+}
+
+function buildFieldsByStep(propertyType) {
+  const byStep = {};
+  for (const [fieldName, def] of Object.entries(getFieldsForPropertyType(propertyType))) {
+    const step = def.path;
+    if (!byStep[step]) byStep[step] = {};
+    byStep[step][fieldName] = mapFieldDef(fieldName, def);
+  }
+  return byStep;
 }
 
 function deepFreeze(value) {
@@ -46,16 +64,22 @@ function buildPropertySchemaResponse() {
   const propertyTypes = Object.keys(propertyTypeFields);
 
   const propertyTypeFieldsOut = {};
+  const steps = {};
+  const fieldsByStep = {};
   for (const propertyType of propertyTypes) {
     propertyTypeFieldsOut[propertyType] = mapFields(propertyTypeFields[propertyType]);
+    steps[propertyType] = getKnownStepIds(propertyType);
+    fieldsByStep[propertyType] = buildFieldsByStep(propertyType);
   }
 
   cachedResponse = deepFreeze({
     version: PROPERTY_SCHEMA_VERSION,
     $schema: JSON_SCHEMA_DIALECT,
     propertyTypes,
+    steps,
     commonFields: mapFields(commonFields),
     propertyTypeFields: propertyTypeFieldsOut,
+    fieldsByStep,
   });
 
   return cachedResponse;

@@ -15,6 +15,8 @@ const {
   resolvePropertyType,
   validateFieldPatches,
 } = require("../utils/listingProcessFields");
+const {getKnownStepIds, isValidPropertyType} = require("../validators/property/fieldRegistry");
+const {checkViewedStepsCompletion} = require("../utils/viewedStepsCompletion");
 
 const MEDIA_LIMITS = {
   photos: {
@@ -103,8 +105,69 @@ const propertyService = {
       listingId,
       propertyType: propertyType ?? null,
       fields: propertyType ? assembleListingFields(prop, propertyType) : {},
+      viewedSteps: Array.isArray(prop.viewedSteps) ? prop.viewedSteps : [],
       propertyStatus: prop.status,
       updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
+    };
+  },
+
+  updateViewedSteps: async (userId, listingId, viewedSteps) => {
+    const propRef = db.collection("properties").doc(listingId);
+    const propSnap = await propRef.get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+    if (prop.status === "submitted") {
+      throw new AppError("Cannot edit a listing that has already been submitted", 409);
+    }
+
+    const propertyType = prop.propertyType;
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      throw new AppError("propertyType must be set on the listing before tracking viewed steps", 400);
+    }
+
+    const knownSteps = new Set(getKnownStepIds(propertyType));
+    const unknown = viewedSteps.filter((id) => !knownSteps.has(id));
+    if (unknown.length) {
+      throw new AppError(`Unknown step id(s) for property type "${propertyType}": ${unknown.join(", ")}`, 400);
+    }
+
+    await propRef.update({
+      viewedSteps,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {viewedSteps};
+  },
+
+  getViewedStepsCompletion: async (userId, listingId) => {
+    const propSnap = await db.collection("properties").doc(listingId).get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+
+    const propertyType = prop.propertyType;
+    const viewedSteps = Array.isArray(prop.viewedSteps) ? prop.viewedSteps : [];
+
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      return {
+        listingId,
+        propertyType: propertyType ?? null,
+        viewedSteps,
+        steps: viewedSteps.map((stepId) => ({
+          stepId,
+          applicable: false,
+          complete: true,
+          missingFields: [],
+        })),
+      };
+    }
+
+    return {
+      listingId,
+      propertyType,
+      viewedSteps,
+      steps: checkViewedStepsCompletion(propertyType, viewedSteps, prop),
     };
   },
 

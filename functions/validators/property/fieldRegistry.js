@@ -1,6 +1,9 @@
 const {z} = require("zod");
 const {emailSchema} = require("../shared/email");
 
+/** Bump when fieldRegistry shape changes in a FE-breaking way. */
+const PROPERTY_SCHEMA_VERSION = 1;
+
 /**
  * ─────────────────────────────────────────────────────────────────────
  * SHARED OPTION LISTS
@@ -919,11 +922,38 @@ const getFieldDefinition = (propertyType, fieldName) => {
   return {...def, dbKey: def.dbKey || fieldName};
 };
 
+function getFieldsForPropertyType(propertyType) {
+  return {...commonFields, ...(propertyTypeFields[propertyType] || {})};
+}
+
+/** Fields on a funnel step (step ID = registry path). */
+function getFieldsForStep(propertyType, stepId) {
+  return Object.entries(getFieldsForPropertyType(propertyType))
+      .filter(([, def]) => def.path === stepId)
+      .map(([fieldName, def]) => ({
+        fieldName,
+        path: def.path,
+        dbKey: def.dbKey || fieldName,
+        schema: def.schema,
+      }));
+}
+
+/** Valid step IDs for a property type (= unique registry paths). */
+function getKnownStepIds(propertyType) {
+  return [...new Set(
+      Object.values(getFieldsForPropertyType(propertyType)).map((d) => d.path),
+  )];
+}
+
 const isValidPropertyType = (propertyType) =>
   Object.prototype.hasOwnProperty.call(propertyTypeFields, propertyType);
 
 module.exports = {
+  PROPERTY_SCHEMA_VERSION,
   getFieldDefinition,
+  getFieldsForPropertyType,
+  getFieldsForStep,
+  getKnownStepIds,
   isValidPropertyType,
   propertyTypeFields,
   commonFields,
