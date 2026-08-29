@@ -5,24 +5,13 @@ const stripeService = require("../services/stripeService");
 const AppError = require("../utils/AppError");
 const Busboy = require("busboy");
 const {ADDONS} = require("../data/addons");
+const {buildPropertySchemaResponse} = require("../utils/buildPropertySchemaResponse");
 
 const propertyController = {
 
   initiateProperty: asyncErrorHandler(async (req, res) => {
     const listingId = await propertyService.initiateProperty(req.user.uid, req.body);
     res.status(201).json({listingId});
-  }),
-
-  saveDraftField: asyncErrorHandler(async (req, res) => {
-    const {listingId} = req.params;
-    const field = await propertyService.saveDraftField(req.user.uid, listingId, req.validatedField);
-    res.status(200).json({success: true, field});
-  }),
-
-  // LEGACY — kept for backward compatibility, see propertyService.saveProperty
-  addProperty: asyncErrorHandler(async (req, res)=>{
-    const listingId = await propertyService.saveProperty(req.user.uid, req.body);
-    res.status(200).json({listingId});
   }),
 
   getListing: asyncErrorHandler(async (req, res)=>{
@@ -124,6 +113,7 @@ const propertyController = {
 
   stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
     const {listingId} = req.params;
+    await propertyService.assertListingComplete(req.user.uid, listingId);
     const selectedAddons = await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
     const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(listingId, req.user.uid, selectedAddons);
     res.status(200).json({clientSecret});
@@ -151,6 +141,10 @@ const propertyController = {
     res.status(200).json(ADDONS);
   }),
 
+  getPropertySchema: asyncErrorHandler(async (req, res) => {
+    res.status(200).json(buildPropertySchemaResponse());
+  }),
+
   getListingProcess: asyncErrorHandler(async (req, res) => {
     const process = await propertyService.getListingProcess(req.user.uid, req.params.listingId);
     res.status(200).json({process});
@@ -165,8 +159,28 @@ const propertyController = {
     res.status(200).json({process});
   }),
 
-  getOwnerMostRecentProcess: asyncErrorHandler(async (req, res) => {
-    const result = await propertyService.getOwnerMostRecentProcess(req.user.uid);
+  updateViewedSteps: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.updateViewedSteps(
+        req.user.uid,
+        req.params.listingId,
+        req.body.viewedSteps,
+    );
+    res.status(200).json(result);
+  }),
+
+  getViewedStepsCompletion: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.getViewedStepsCompletion(
+        req.user.uid,
+        req.params.listingId,
+    );
+    res.status(200).json(result);
+  }),
+
+  getListingCompletion: asyncErrorHandler(async (req, res) => {
+    const result = await propertyService.getListingCompletion(
+        req.user.uid,
+        req.params.listingId,
+    );
     res.status(200).json(result);
   }),
 

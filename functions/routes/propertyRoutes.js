@@ -4,11 +4,20 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const requireVerifiedEmail = require("../middlewares/requireVerifiedEmail");
 const validate = require("../middlewares/validate");
-const validateDraftField = require("../middlewares/validateDraftField");
 const {
   initiatePropertySchema, selectedAddonsSchema,
-  listingProcessPatchSchema,
+  listingProcessPatchSchema, viewedStepsSchema,
 } = require("../validators/property/schemas.js");
+const {PROPERTY_SCHEMA_VERSION} = require("../validators/property/fieldRegistry");
+
+router.get("/schema/version", (_req, res) => {
+  res.status(200).json({version: PROPERTY_SCHEMA_VERSION});
+});
+
+router.get(
+    "/schema",
+    propertyController.getPropertySchema,
+);
 
 router.get(
     "/get-addon-registry",
@@ -32,13 +41,6 @@ router.get(
 );
 
 router.get(
-    "/get-owner-most-recent-process",
-    verifyFirebaseToken,
-    requireVerifiedEmail,
-    propertyController.getOwnerMostRecentProcess,
-);
-
-router.get(
     "/listings/:id",
     verifyFirebaseToken,
     requireVerifiedEmail,
@@ -51,6 +53,13 @@ router.post(
     requireVerifiedEmail,
     validate(initiatePropertySchema),
     propertyController.initiateProperty,
+);
+
+router.get(
+    "/:listingId/listing-process/completion",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    propertyController.getListingCompletion,
 );
 
 router.get(
@@ -68,12 +77,19 @@ router.patch(
     propertyController.saveListingProcess,
 );
 
-router.patch(
-    "/:listingId/draft-field",
+router.put(
+    "/:listingId/viewed-steps",
     verifyFirebaseToken,
     requireVerifiedEmail,
-    validateDraftField,
-    propertyController.saveDraftField,
+    validate(viewedStepsSchema),
+    propertyController.updateViewedSteps,
+);
+
+router.get(
+    "/:listingId/viewed-steps/completion",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    propertyController.getViewedStepsCompletion,
 );
 
 router.post(
@@ -90,13 +106,6 @@ router.post(
     requireVerifiedEmail,
     propertyController.requestRefund,
 );
-
-// LEGACY — kept for backward compatibility, see propertyController.addProperty
-// router.post(
-//     "/add-property",
-//     verifyFirebaseToken,
-//     propertyController.addProperty,
-// );
 
 router.post(
     "/:listingId/media/:mediaType",

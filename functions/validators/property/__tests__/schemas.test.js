@@ -1,8 +1,8 @@
 const {
   initiatePropertySchema,
-  draftFieldEnvelopeSchema,
   listingProcessPatchSchema,
   selectedAddonsSchema,
+  viewedStepsSchema,
 } = require("../schemas");
 const {ADDONS_BY_ID} = require("../../../data/addons");
 
@@ -22,54 +22,6 @@ describe("initiatePropertySchema", () => {
 
   test("rejects an unknown occupancyType", () => {
     const {error} = initiatePropertySchema.validate({occupancyType: "bogus"});
-    expect(error).toBeDefined();
-  });
-});
-
-describe("draftFieldEnvelopeSchema", () => {
-  test("accepts a real propertyType with fieldName/fieldValue", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
-      propertyType: "detached",
-      fieldName: "bedrooms",
-      fieldValue: 3,
-    });
-    expect(error).toBeUndefined();
-  });
-
-  test("rejects an unknown propertyType", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
-      propertyType: "not-a-real-type",
-      fieldName: "bedrooms",
-      fieldValue: 3,
-    });
-    expect(error).toBeDefined();
-  });
-
-  test("requires fieldName", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
-      propertyType: "detached",
-      fieldValue: 3,
-    });
-    expect(error).toBeDefined();
-  });
-
-  test.each([0, false, ""])(
-      "accepts falsy-but-present fieldValue %p (Joi.any().required() only rejects undefined)",
-      (fieldValue) => {
-        const {error} = draftFieldEnvelopeSchema.validate({
-          propertyType: "detached",
-          fieldName: "bedrooms",
-          fieldValue,
-        });
-        expect(error).toBeUndefined();
-      },
-  );
-
-  test("rejects a missing fieldValue", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
-      propertyType: "detached",
-      fieldName: "bedrooms",
-    });
     expect(error).toBeDefined();
   });
 });
@@ -106,25 +58,24 @@ describe("selectedAddonsSchema", () => {
 });
 
 describe("listingProcessPatchSchema", () => {
-  test("accepts state alone", () => {
-    const {error} = listingProcessPatchSchema.validate({state: {anything: "goes"}});
-    expect(error).toBeUndefined();
-  });
-
-  test("accepts state with furthestMajorIndex inside", () => {
+  test("accepts nested path sections with an optional propertyType", () => {
     const {error} = listingProcessPatchSchema.validate({
-      state: {furthestMajorIndex: 2, occupancy: "owner"},
+      propertyType: "detached",
+      garage: {garageType: "attached"},
+      interior: {bedroomsAboveGrade: 3},
     });
     expect(error).toBeUndefined();
   });
+});
 
-  test("rejects payload without state", () => {
-    const {error} = listingProcessPatchSchema.validate({});
-    expect(error).toBeDefined();
+describe("viewedStepsSchema", () => {
+  test("accepts a unique non-empty step id list", () => {
+    const {error} = viewedStepsSchema.validate({viewedSteps: ["garage", "contact"]});
+    expect(error).toBeUndefined();
   });
 
-  test("rejects non-object state", () => {
-    const {error} = listingProcessPatchSchema.validate({state: "nope"});
+  test("rejects duplicate step ids", () => {
+    const {error} = viewedStepsSchema.validate({viewedSteps: ["garage", "garage"]});
     expect(error).toBeDefined();
   });
 });

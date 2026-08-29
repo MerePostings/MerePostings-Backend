@@ -8,7 +8,15 @@ const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
 const {ACTION_TARGETS} = require("../data/actionTargets");
-const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
+const {
+  assembleListingFields,
+  buildFirestoreUpdate,
+  extractFieldPatches,
+  resolvePropertyType,
+  validateFieldPatches,
+} = require("../utils/listingProcessFields");
+const {getKnownStepIds, isValidPropertyType} = require("../validators/property/fieldRegistry");
+const {checkViewedStepsCompletion, checkListingCompletion} = require("../utils/viewedStepsCompletion");
 
 const MEDIA_LIMITS = {
   photos: {
@@ -36,154 +44,8 @@ async function assertListingOwnership(listingId, uid) {
   if (snap.data().ownerId !== uid) throw new AppError("Unauthorized access to this property", 403);
 }
 
-/** Flat listing-process fields stored once on the property root (no flowState). */
-const PROCESS_FIELD_KEYS = [
-  "listedWithOtherBrokerage",
-  "supportTier",
-  "occupancy",
-  "propertyType",
-  "askingPrice",
-  "requestListingPriceReview",
-  "selectedAddons",
-  "walkthroughAnswers",
-  "sellerContact",
-  "ownership",
-  "mailingAddress",
-  "propertyDetails",
-  "featuresUpgrades",
-  "buyerCopy",
-  "sellerConfirmations",
-];
-
-/** Intermediate step-group keys to delete after migrating to flat. */
-const STEP_GROUP_KEYS = [
-  "getStarted",
-  "sellingStyle",
-  "basicDetail",
-  "tellBuyers",
-  "beforeLive",
-  "reviewListing",
-];
-
-function isStepGroupedState(state) {
-  if (!state || typeof state !== "object") return false;
-  return STEP_GROUP_KEYS.some((k) => state[k] != null && typeof state[k] === "object");
-}
-
-function isFlatProcessState(state) {
-  if (!state || typeof state !== "object") return false;
-  // Flat if any process field is present and we're not in step-group shape
-  if (isStepGroupedState(state)) return false;
-  return PROCESS_FIELD_KEYS.some((k) => k in state);
-}
-
-/** Unwrap step-grouped wire → flat process fields. */
-function unwrapStepGroupsToFlat(grouped) {
-  if (!grouped || typeof grouped !== "object") return {};
-  const out = {};
-  if (typeof grouped.furthestMajorIndex === "number") {
-    out.furthestMajorIndex = grouped.furthestMajorIndex;
-  }
-  if (grouped.getStarted) {
-    out.listedWithOtherBrokerage = grouped.getStarted.listedWithOtherBrokerage ?? null;
-  }
-  if (grouped.sellingStyle) {
-    out.supportTier = grouped.sellingStyle.supportTier ?? null;
-    out.walkthroughAnswers = grouped.sellingStyle.walkthroughAnswers ?? {};
-  }
-  if (grouped.basicDetail) {
-    out.occupancy = grouped.basicDetail.occupancy ?? null;
-    out.sellerContact = grouped.basicDetail.sellerContact ?? {};
-    out.ownership = grouped.basicDetail.ownership ?? {};
-    out.mailingAddress = grouped.basicDetail.mailingAddress ?? {};
-  }
-  if (grouped.propertyDetails && typeof grouped.propertyDetails === "object") {
-    const {propertyType, askingPrice, requestListingPriceReview, ...rest} = grouped.propertyDetails;
-    out.propertyDetails = rest;
-    if (propertyType !== undefined) out.propertyType = propertyType;
-    if (askingPrice !== undefined) out.askingPrice = askingPrice;
-    if (requestListingPriceReview !== undefined) {
-      out.requestListingPriceReview = requestListingPriceReview;
-    }
-  }
-  if (grouped.featuresUpgrades != null) out.featuresUpgrades = grouped.featuresUpgrades;
-  if (grouped.tellBuyers != null) out.buyerCopy = grouped.tellBuyers;
-  if (grouped.beforeLive?.selectedAddons != null) {
-    out.selectedAddons = grouped.beforeLive.selectedAddons;
-  }
-  if (grouped.reviewListing != null) out.sellerConfirmations = grouped.reviewListing;
-  return out;
-}
-
-/** Normalize incoming PATCH state (flat, step-grouped, or legacy flowState blob) → flat. */
-function normalizeIncomingState(state) {
-  if (!state || typeof state !== "object") return {};
-  if (isStepGroupedState(state)) return unwrapStepGroupsToFlat(state);
-  // Already flat (or legacy flat flowState contents)
-  const out = {};
-  if (typeof state.furthestMajorIndex === "number") {
-    out.furthestMajorIndex = state.furthestMajorIndex;
-  }
-  for (const k of PROCESS_FIELD_KEYS) {
-    if (k in state) out[k] = state[k];
-  }
-  return out;
-}
-
-/** Assemble listing-process `state` from property root (flat preferred). */
-function assembleProcessState(prop) {
-  if (isFlatProcessState(prop)) {
-    const state = {};
-    if (typeof prop.furthestMajorIndex === "number") {
-      state.furthestMajorIndex = prop.furthestMajorIndex;
-    }
-    for (const k of PROCESS_FIELD_KEYS) {
-      if (k in prop) state[k] = prop[k];
-    }
-    // Prefer root selectedAddons; fall back to brief beforeLive window
-    if (!Array.isArray(state.selectedAddons) && Array.isArray(prop.beforeLive?.selectedAddons)) {
-      state.selectedAddons = prop.beforeLive.selectedAddons;
-    }
-    return state;
-  }
-  if (isStepGroupedState(prop)) {
-    return unwrapStepGroupsToFlat(prop);
-  }
-  if (prop.flowState && typeof prop.flowState === "object") {
-    return normalizeIncomingState(prop.flowState);
-  }
-  return {};
-}
-
-/** selectedAddons at root; fall back to beforeLive (step-group window). */
 function getSelectedAddons(prop) {
-  if (Array.isArray(prop?.selectedAddons)) return prop.selectedAddons;
-  if (Array.isArray(prop?.beforeLive?.selectedAddons)) return prop.beforeLive.selectedAddons;
-  return [];
-}
-
-function isPlainObject(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Deep-merge plain objects for listing-process nested fields.
- * Arrays / scalars / null replace. Used so sparse nested PATCHes keep siblings.
- */
-function deepMergePlainObjects(prev, next) {
-  if (!isPlainObject(next)) return next;
-  if (!isPlainObject(prev)) return {...next};
-  const out = {...prev};
-  for (const key of Object.keys(next)) {
-    const n = next[key];
-    const p = prev[key];
-    if (isPlainObject(n) && isPlainObject(p)) {
-      out[key] = deepMergePlainObjects(p, n);
-    } else {
-      out[key] = n;
-    }
-  }
-  return out;
+  return Array.isArray(prop?.selectedAddons) ? prop.selectedAddons : [];
 }
 
 const buildAddressName = (location) => {
@@ -209,110 +71,6 @@ const buildAddressName = (location) => {
 const propertyService = {
 
   /**
-     * Cleans the payload before saving to Firestore
-     * - Removes any key literally named "undefined"
-     * - Removes any top-level keys that have undefined values
-     * - Cleans inside sectionValues and all section objects
-     *
-     * NOTE: only used by the legacy addProperty/saveProperty flow below.
-     * The new draft-field flow validates+writes one field at a time, so
-     * there's no bulk payload left to sanitize.
-     */
-  cleanPayload: (payload) => {
-    if (!payload || typeof payload !== "object") return payload;
-
-    const cleaned = JSON.parse(JSON.stringify(payload));
-
-    const cleanObject = (obj) => {
-      if (!obj || typeof obj !== "object") return obj;
-
-      Object.keys(obj).forEach((key) => {
-        if (key === "undefined") {
-          delete obj[key];
-          return;
-        }
-
-        if (obj[key] === undefined) {
-          delete obj[key];
-          return;
-        }
-
-        if (typeof obj[key] === "object" && obj[key] !== null) {
-          obj[key] = cleanObject(obj[key]);
-        }
-      });
-      return obj;
-    };
-
-    cleanObject(cleaned);
-
-    if (cleaned.sectionValues && typeof cleaned.sectionValues === "object") {
-      cleanObject(cleaned.sectionValues);
-    }
-
-    Object.keys(cleaned).forEach((key) => {
-      if (typeof cleaned[key] === "object" &&
-                key !== "sectionValues" &&
-                key !== "saleType" &&
-                key !== "selectedType" &&
-                key !== "subType") {
-        cleaned[key] = cleanObject(cleaned[key]);
-      }
-    });
-
-    return cleaned;
-  },
-
-  /**
-     * LEGACY — full-payload create/update, kept for backward compatibility
-     * while the frontend migrates to initiateProperty() + saveDraftField().
-     * Safe to delete once nothing calls POST /add-property anymore.
-     */
-  saveProperty: async (userId, payload) => {
-    const cleanData = propertyService.cleanPayload(payload);
-
-    const {
-      saleType,
-      selectedType,
-      subType,
-      existingListingId,
-      sectionValues,
-    } = cleanData;
-
-    const dataToSave = {
-      ownerId: userId,
-      saleType: saleType || null,
-      propertyType: selectedType || null,
-      subType: subType || null,
-      ...sectionValues,
-      paid: false,
-      status: "draft",
-      updatedAt: FieldValue.serverTimestamp(),
-    };
-
-    try {
-      if (existingListingId) {
-        await db.collection("properties")
-            .doc(existingListingId)
-            .set(dataToSave, {merge: true});
-
-        return existingListingId;
-      } else {
-        const listingRef = await db.collection("properties").add({
-          ...dataToSave,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-
-        const newListingId = listingRef.id;
-        return newListingId;
-      }
-    } catch (e) {
-      logger.error("Error saving property:", e);
-      throw new AppError("Failed to save Property", 500);
-    }
-  },
-
-  /**
      * STAGE 1 — Initiation.
      * Creates properties/{id}. Optional occupancy seeds flat occupancy field.
      */
@@ -323,7 +81,6 @@ const propertyService = {
         ownerId: userId,
         status: "initiated",
         paid: false,
-        furthestMajorIndex: 0,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       };
@@ -343,35 +100,18 @@ const propertyService = {
     const prop = propSnap.data();
     if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
 
-    const procSnap = await db.collection("listingProcesses").doc(listingId).get();
-    if (!procSnap.exists) {
-      // Backfill empty process for older properties
-      const empty = {
-        ownerId: userId,
-        listingId,
-        furthestMajorIndex: 0,
-        state: {},
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      await db.collection("listingProcesses").doc(listingId).set(empty);
-      return {
-        listingId,
-        furthestMajorIndex: 0,
-        state: {},
-        propertyStatus: prop.status,
-      };
-    }
-
+    const propertyType = prop.propertyType;
     return {
       listingId,
-      state: assembleProcessState(prop),
+      propertyType: propertyType ?? null,
+      fields: propertyType ? assembleListingFields(prop, propertyType) : {},
+      viewedSteps: Array.isArray(prop.viewedSteps) ? prop.viewedSteps : [],
       propertyStatus: prop.status,
       updatedAt: prop.updatedAt?.toDate?.() || prop.updatedAt,
     };
   },
 
-  saveListingProcess: async (userId, listingId, {state}) => {
+  updateViewedSteps: async (userId, listingId, viewedSteps) => {
     const propRef = db.collection("properties").doc(listingId);
     const propSnap = await propRef.get();
     if (!propSnap.exists) throw new AppError("Property not found", 404);
@@ -381,131 +121,117 @@ const propertyService = {
       throw new AppError("Cannot edit a listing that has already been submitted", 409);
     }
 
-    const incoming = state != null ? normalizeIncomingState(state) : {};
-    const prev = assembleProcessState(prop);
-
-    const nextState = {...prev};
-    if (typeof incoming.furthestMajorIndex === "number") {
-      nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
-    }
-    // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
-    for (const k of PROCESS_FIELD_KEYS) {
-      if (k in incoming) {
-        nextState[k] = deepMergePlainObjects(prev[k], incoming[k]);
-      }
+    const propertyType = prop.propertyType;
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      throw new AppError("propertyType must be set on the listing before tracking viewed steps", 400);
     }
 
-    const nextStatus = prop.status === "initiated" ? "draft" : prop.status;
-    const update = {
-      status: nextStatus,
+    const knownSteps = new Set(getKnownStepIds(propertyType));
+    const unknown = viewedSteps.filter((id) => !knownSteps.has(id));
+    if (unknown.length) {
+      throw new AppError(`Unknown step id(s) for property type "${propertyType}": ${unknown.join(", ")}`, 400);
+    }
+
+    await propRef.update({
+      viewedSteps,
       updatedAt: FieldValue.serverTimestamp(),
-      flowState: FieldValue.delete(),
-    };
-    // Clear intermediate step-group keys
-    for (const k of STEP_GROUP_KEYS) {
-      update[k] = FieldValue.delete();
-    }
+    });
 
-    if (typeof nextState.furthestMajorIndex === "number") {
-      update.furthestMajorIndex = nextState.furthestMajorIndex;
-    }
-    for (const k of PROCESS_FIELD_KEYS) {
-      if (k in nextState) update[k] = nextState[k];
-    }
+    return {viewedSteps};
+  },
 
-    await propRef.update(update);
+  getViewedStepsCompletion: async (userId, listingId) => {
+    const propSnap = await db.collection("properties").doc(listingId).get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+
+    const propertyType = prop.propertyType;
+    const viewedSteps = Array.isArray(prop.viewedSteps) ? prop.viewedSteps : [];
+
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      return {
+        listingId,
+        propertyType: propertyType ?? null,
+        viewedSteps,
+        steps: viewedSteps.map((stepId) => ({
+          stepId,
+          applicable: false,
+          complete: true,
+          missingFields: [],
+        })),
+      };
+    }
 
     return {
       listingId,
-      state: nextState,
-      propertyStatus: nextStatus,
+      propertyType,
+      viewedSteps,
+      steps: checkViewedStepsCompletion(propertyType, viewedSteps, prop),
     };
   },
 
-  getOwnerMostRecentProcess: async (userId) => {
-    try {
-      const snapshot = await db
-          .collection("properties")
-          .where("ownerId", "==", userId)
-          .get();
+  getListingCompletion: async (userId, listingId) => {
+    const propSnap = await db.collection("properties").doc(listingId).get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
 
-      if (snapshot.empty) {
-        return {process: null};
-      }
-
-      const docs = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            const updatedAt = data.updatedAt?.toDate?.() || data.updatedAt || new Date(0);
-            return {id: doc.id, data, updatedAt: new Date(updatedAt).getTime()};
-          })
-          .sort((a, b) => b.updatedAt - a.updatedAt);
-
-      for (const {id, data} of docs) {
-        if (!EDITABLE_STATUSES.has(data.status)) continue;
-        return {
-          process: {
-            listingId: id,
-            state: assembleProcessState(data),
-            propertyStatus: data.status,
-            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
-          },
-        };
-      }
-
-      return {process: null};
-    } catch (e) {
-      logger.error("Error in getOwnerMostRecentProcess:", e);
-      throw new AppError("Failed to fetch most recent listing process. Please try again.", 500);
+    const propertyType = prop.propertyType;
+    if (!propertyType || !isValidPropertyType(propertyType)) {
+      throw new AppError("propertyType must be set before checking listing completeness", 400);
     }
+
+    const {complete, steps, missingFields} = checkListingCompletion(propertyType, prop);
+    return {listingId, propertyType, complete, steps, missingFields};
   },
 
-  /**
-     * STAGE 2 — Draft auto-save, one field at a time (legacy / compat).
-     * `field` is the object attached by middlewares/validateDraftField.js:
-     *   { propertyType, fieldName, fieldValue, path, dbKey }
-     */
-  saveDraftField: async (userId, listingId, field) => {
-    const {propertyType, fieldName, fieldValue, path: sectionPath, dbKey} = field;
-
-    const docRef = db.collection("properties").doc(listingId);
-    const snap = await docRef.get();
-
-    if (!snap.exists) {
-      throw new AppError("Property not found", 404);
+  assertListingComplete: async (userId, listingId) => {
+    const result = await propertyService.getListingCompletion(userId, listingId);
+    if (!result.complete) {
+      const err = new AppError("Listing has incomplete required fields", 400);
+      err.errors = result.missingFields.map((field) => ({field, message: "Required"}));
+      throw err;
     }
+    return result;
+  },
 
-    const existing = snap.data();
-
-    if (existing.ownerId !== userId) {
-      throw new AppError("Unauthorized access to this property", 403);
-    }
-
-    if (existing.status === "submitted") {
+  saveListingProcess: async (userId, listingId, body) => {
+    const propRef = db.collection("properties").doc(listingId);
+    const propSnap = await propRef.get();
+    if (!propSnap.exists) throw new AppError("Property not found", 404);
+    const prop = propSnap.data();
+    if (prop.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+    if (prop.status === "submitted") {
       throw new AppError("Cannot edit a listing that has already been submitted", 409);
     }
 
-    if (existing.propertyType && existing.propertyType !== propertyType) {
-      throw new AppError(
-          `Property type mismatch: listing is "${existing.propertyType}" but request sent "${propertyType}"`,
-          409,
-      );
+    const propertyType = resolvePropertyType(body, prop);
+    const patches = extractFieldPatches(body);
+    if (patches.length === 0) {
+      throw new AppError("No fields to update", 400);
     }
 
-    const firestoreKey = sectionPath === "top" ? dbKey : `${sectionPath}.${dbKey}`;
+    const validatedByPath = validateFieldPatches(propertyType, patches);
+    const fieldUpdate = buildFirestoreUpdate(prop, validatedByPath);
+    const nextStatus = prop.status === "initiated" ? "draft" : prop.status;
 
-    try {
-      await docRef.update({
-        [firestoreKey]: fieldValue,
-        status: "draft",
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      logger.error("Error saving draft field:", e);
-      throw new AppError("Failed to save field", 500);
-    }
+    const update = {
+      ...fieldUpdate,
+      propertyType,
+      status: nextStatus,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
 
-    return {[fieldName]: fieldValue};
+    await propRef.update(update);
+
+    const merged = {...prop, ...fieldUpdate, propertyType};
+    return {
+      listingId,
+      propertyType,
+      fields: assembleListingFields(merged, propertyType),
+      propertyStatus: nextStatus,
+    };
   },
 
   /**
@@ -987,7 +713,6 @@ const propertyService = {
     try {
       await docRef.update({
         selectedAddons,
-        beforeLive: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
     } catch (e) {

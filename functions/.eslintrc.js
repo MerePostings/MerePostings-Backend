@@ -4,7 +4,7 @@ module.exports = {
     node: true,
   },
   parserOptions: {
-    // Bumped from 2018: fieldRegistry.js already uses numeric separators
+    // Bumped from 2018: some validators use numeric separators
     // (e.g. 1_000_000_000_000), which is ES2021 syntax — under 2018 that line
     // fails to parse at all, so lint has never actually been able to
     // completely check that file.

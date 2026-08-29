@@ -5,107 +5,6 @@ const {__refs: dbRefs, resetDbMock} = require("../../config/db");
 const actionService = require("../actionService");
 const propertyService = require("../propertyService");
 
-describe("propertyService.saveDraftField", () => {
-  beforeEach(() => {
-    resetDbMock();
-  });
-
-  const field = {
-    propertyType: "detached",
-    fieldName: "bedrooms",
-    fieldValue: 3,
-    path: "basics",
-    dbKey: "bedrooms",
-  };
-
-  test("throws 404 when the listing doc doesn't exist", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
-
-    await expect(propertyService.saveDraftField("user-1", "listing-1", field)).rejects.toMatchObject({
-      statusCode: 404,
-    });
-    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
-  });
-
-  test("throws 403 when ownerId doesn't match the caller", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "someone-else", status: "draft"}),
-    });
-
-    await expect(propertyService.saveDraftField("user-1", "listing-1", field)).rejects.toMatchObject({
-      statusCode: 403,
-    });
-    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
-  });
-
-  test("throws 409 when the listing is already submitted, without writing", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "user-1", status: "submitted", propertyType: "detached"}),
-    });
-
-    await expect(propertyService.saveDraftField("user-1", "listing-1", field)).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
-  });
-
-  test("throws 409 on a propertyType mismatch", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "user-1", status: "draft", propertyType: "condoApartment"}),
-    });
-
-    await expect(propertyService.saveDraftField("user-1", "listing-1", field)).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
-  });
-
-  test("happy path: writes a nested dotted-path key and returns the field", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
-    });
-    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
-
-    const result = await propertyService.saveDraftField("user-1", "listing-1", field);
-
-    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
-        expect.objectContaining({"basics.bedrooms": 3, "status": "draft"}),
-    );
-    expect(result).toEqual({bedrooms: 3});
-  });
-
-  test("happy path: a 'top' sectionPath writes the dbKey directly, not nested", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "user-1", status: "draft", propertyType: null}),
-    });
-    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
-
-    const topField = {propertyType: "detached", fieldName: "propertyType", fieldValue: "detached", path: "top", dbKey: "propertyType"};
-    await propertyService.saveDraftField("user-1", "listing-1", topField);
-
-    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
-        expect.objectContaining({propertyType: "detached"}),
-    );
-  });
-
-  test("throws 500 when the Firestore write fails", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
-    });
-    dbRefs.docRef.update.mockRejectedValueOnce(new Error("firestore down"));
-
-    await expect(propertyService.saveDraftField("user-1", "listing-1", field)).rejects.toMatchObject({
-      statusCode: 500,
-    });
-  });
-});
-
 describe("propertyService.markSubmitted", () => {
   beforeEach(() => {
     resetDbMock();
@@ -191,11 +90,16 @@ describe("propertyService.saveListingProcess", () => {
     resetDbMock();
   });
 
+  const patchBody = {
+    propertyType: "detached",
+    garage: {garageType: "attached"},
+  };
+
   test("throws 404 when the listing doc doesn't exist", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
 
     await expect(
-        propertyService.saveListingProcess("user-1", "listing-1", {state: {occupancy: "owner"}}),
+        propertyService.saveListingProcess("user-1", "listing-1", patchBody),
     ).rejects.toMatchObject({statusCode: 404});
     expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
@@ -207,7 +111,7 @@ describe("propertyService.saveListingProcess", () => {
     });
 
     await expect(
-        propertyService.saveListingProcess("user-1", "listing-1", {state: {occupancy: "owner"}}),
+        propertyService.saveListingProcess("user-1", "listing-1", patchBody),
     ).rejects.toMatchObject({statusCode: 403});
     expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
@@ -219,121 +123,270 @@ describe("propertyService.saveListingProcess", () => {
     });
 
     await expect(
-        propertyService.saveListingProcess("user-1", "listing-1", {state: {occupancy: "owner"}}),
+        propertyService.saveListingProcess("user-1", "listing-1", patchBody),
     ).rejects.toMatchObject({statusCode: 409});
     expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
 
-  test("deep-merges nested propertyDetails and preserves siblings", async () => {
+  test("patches multiple path sections in one request", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
+      propertyType: "detached",
+      garage: {garageType: "attached", garageSpaces: 2},
+      interior: {bedroomsAboveGrade: 3},
+    });
+
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          garage: {garageType: "attached", garageSpaces: 2},
+          interior: {bedroomsAboveGrade: 3},
+          propertyType: "detached",
+          status: "draft",
+        }),
+    );
+    expect(result.fields.garage.garageType).toBe("attached");
+    expect(result.fields.interior.bedroomsAboveGrade).toBe(3);
+  });
+
+  test("deep-merges nested objects within a path and preserves siblings", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
       data: () => ({
         ownerId: "user-1",
         status: "draft",
-        furthestMajorIndex: 3,
-        propertyDetails: {
-          address: "1 Main",
-          bedrooms: 3,
-          rural: {acreage: "5", subtype: "farm"},
-        },
+        propertyType: "detached",
+        interior: {bathrooms: {twoPiece: 1, threePiece: 2}},
       }),
     });
     dbRefs.docRef.update.mockResolvedValueOnce(undefined);
 
     const result = await propertyService.saveListingProcess("user-1", "listing-1", {
-      state: {propertyDetails: {address: "2 Oak"}},
+      propertyType: "detached",
+      interior: {bathrooms: {twoPiece: 0}},
     });
 
-    expect(result.state.propertyDetails).toEqual({
-      address: "2 Oak",
-      bedrooms: 3,
-      rural: {acreage: "5", subtype: "farm"},
-    });
+    expect(result.fields.interior.bathrooms).toEqual({twoPiece: 0, threePiece: 2});
     expect(dbRefs.docRef.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          propertyDetails: {
-            address: "2 Oak",
-            bedrooms: 3,
-            rural: {acreage: "5", subtype: "farm"},
-          },
+          interior: {bathrooms: {twoPiece: 0, threePiece: 2}},
         }),
     );
   });
 
-  test("replaces scalar top-level fields", async () => {
+  test("throws 400 when no field sections are provided", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
-      data: () => ({
-        ownerId: "user-1",
-        status: "draft",
-        occupancy: "tenant",
-      }),
-    });
-    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
-
-    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
-      state: {occupancy: "owner"},
+      data: () => ({ownerId: "user-1", status: "draft"}),
     });
 
-    expect(result.state.occupancy).toBe("owner");
+    await expect(
+        propertyService.saveListingProcess("user-1", "listing-1", {propertyType: "detached"}),
+    ).rejects.toMatchObject({statusCode: 400});
+    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
 
-  test("persists requestListingPriceReview", async () => {
+  test("throws 400 on an invalid field value", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
-      data: () => ({
-        ownerId: "user-1",
-        status: "draft",
-      }),
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+
+    await expect(
+        propertyService.saveListingProcess("user-1", "listing-1", {
+          propertyType: "detached",
+          garage: {garageType: "flying-car"},
+        }),
+    ).rejects.toMatchObject({statusCode: 400});
+    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
+  });
+
+  test("promotes initiated listings to draft on first field save", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "initiated"}),
     });
     dbRefs.docRef.update.mockResolvedValueOnce(undefined);
 
-    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
-      state: {requestListingPriceReview: true},
-    });
+    const result = await propertyService.saveListingProcess("user-1", "listing-1", patchBody);
 
-    expect(result.state.requestListingPriceReview).toBe(true);
     expect(dbRefs.docRef.update).toHaveBeenCalledWith(
-        expect.objectContaining({requestListingPriceReview: true}),
+        expect.objectContaining({status: "draft"}),
+    );
+    expect(result.propertyStatus).toBe("draft");
+  });
+});
+
+describe("propertyService.updateViewedSteps", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 404 when the listing doc doesn't exist", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["garage"]),
+    ).rejects.toMatchObject({statusCode: 404});
+  });
+
+  test("throws 400 when propertyType is not set on the listing", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft"}),
+    });
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["garage"]),
+    ).rejects.toMatchObject({statusCode: 400});
+  });
+
+  test("throws 400 for an unknown step id", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+    await expect(
+        propertyService.updateViewedSteps("user-1", "listing-1", ["not-a-step"]),
+    ).rejects.toMatchObject({statusCode: 400});
+    expect(dbRefs.docRef.update).not.toHaveBeenCalled();
+  });
+
+  test("happy path: replaces viewedSteps on the listing root", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", propertyType: "detached"}),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.updateViewedSteps(
+        "user-1", "listing-1", ["garage", "contact"],
+    );
+
+    expect(result).toEqual({viewedSteps: ["garage", "contact"]});
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(
+        expect.objectContaining({viewedSteps: ["garage", "contact"]}),
     );
   });
+});
 
-  test("replaces arrays instead of concatenating", async () => {
-    dbRefs.docRef.get.mockResolvedValueOnce({
-      exists: true,
-      data: () => ({
-        ownerId: "user-1",
-        status: "draft",
-        selectedAddons: ["professional_photography"],
-      }),
-    });
-    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
-
-    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
-      state: {selectedAddons: ["pre_listing_home_inspection"]},
-    });
-
-    expect(result.state.selectedAddons).toEqual(["pre_listing_home_inspection"]);
+describe("propertyService.getViewedStepsCompletion", () => {
+  beforeEach(() => {
+    resetDbMock();
   });
 
-  test("omitted top-level keys are left untouched", async () => {
+  test("returns completion for stored viewed steps", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,
       data: () => ({
         ownerId: "user-1",
-        status: "draft",
-        supportTier: "flexible",
-        occupancy: "owner",
+        propertyType: "detached",
+        viewedSteps: ["contact"],
+        contact: {
+          sellerFullName: "Jane Doe",
+          sellerEmail: "jane@example.com",
+          sellerPhone: "555-1234",
+          preferredContactMethod: "email",
+        },
       }),
     });
-    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
 
-    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
-      state: {occupancy: "vacant"},
+    const result = await propertyService.getViewedStepsCompletion("user-1", "listing-1");
+
+    expect(result.viewedSteps).toEqual(["contact"]);
+    expect(result.steps[0]).toMatchObject({stepId: "contact", complete: true});
+  });
+
+  test("reports missing required fields for an incomplete viewed step", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "user-1",
+        propertyType: "detached",
+        viewedSteps: ["contact"],
+        contact: {},
+      }),
     });
 
-    expect(result.state.supportTier).toBe("flexible");
-    expect(result.state.occupancy).toBe("vacant");
+    const result = await propertyService.getViewedStepsCompletion("user-1", "listing-1");
+
+    expect(result.steps[0].complete).toBe(false);
+    expect(result.steps[0].missingFields.length).toBeGreaterThan(0);
+  });
+});
+
+const completeDetached = {
+  ownerId: "user-1",
+  propertyType: "detached",
+  pricing: {askingPrice: 500000},
+  location: {streetNumber: "1", streetName: "Main", municipality: "Toronto"},
+  buyerInfo: {buyersWillLove: "Light"},
+  occupancy: {occupancyStatus: "vacant"},
+  contact: {
+    sellerFullName: "Jane Doe",
+    sellerEmail: "jane@example.com",
+    sellerPhone: "555-1234",
+    preferredContactMethod: "email",
+  },
+  ownership: {isRegisteredOwner: true},
+};
+
+describe("propertyService.getListingCompletion", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 400 when propertyType is not set", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1"}),
+    });
+    await expect(
+        propertyService.getListingCompletion("user-1", "listing-1"),
+    ).rejects.toMatchObject({statusCode: 400});
+  });
+
+  test("reports incomplete required fields across all steps", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", propertyType: "detached"}),
+    });
+
+    const result = await propertyService.getListingCompletion("user-1", "listing-1");
+    expect(result.complete).toBe(false);
+    expect(result.missingFields).toEqual(expect.arrayContaining(["contact.sellerFullName"]));
+  });
+});
+
+describe("propertyService.assertListingComplete", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  test("throws 400 with errors when required fields are missing", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", propertyType: "detached"}),
+    });
+
+    await expect(
+        propertyService.assertListingComplete("user-1", "listing-1"),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Listing has incomplete required fields",
+    });
+  });
+
+  test("resolves when every required field is filled", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => completeDetached,
+    });
+
+    const result = await propertyService.assertListingComplete("user-1", "listing-1");
+    expect(result.complete).toBe(true);
   });
 });
 
@@ -612,7 +665,7 @@ describe("propertyService.saveSelectedAddons", () => {
     expect(dbRefs.docRef.update).not.toHaveBeenCalled();
   });
 
-  test("happy path: persists the addon selection and clears the legacy beforeLive field", async () => {
+  test("happy path: persists the addon selection", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
     dbRefs.docRef.update.mockResolvedValueOnce(undefined);
 
