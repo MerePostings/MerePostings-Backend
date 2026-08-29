@@ -4,11 +4,15 @@ const router = express.Router();
 const verifyFirebaseToken = require("../middlewares/verifyFirebaseToken");
 const requireVerifiedEmail = require("../middlewares/requireVerifiedEmail");
 const validate = require("../middlewares/validate");
-const validateDraftField = require("../middlewares/validateDraftField");
 const {
   initiatePropertySchema, selectedAddonsSchema,
   listingProcessPatchSchema,
 } = require("../validators/property/schemas.js");
+
+router.get(
+    "/schema",
+    propertyController.getPropertySchema,
+);
 
 router.get(
     "/get-addon-registry",
@@ -68,14 +72,6 @@ router.patch(
     propertyController.saveListingProcess,
 );
 
-router.patch(
-    "/:listingId/draft-field",
-    verifyFirebaseToken,
-    requireVerifiedEmail,
-    validateDraftField,
-    propertyController.saveDraftField,
-);
-
 router.post(
     "/create-client-secret/:listingId",
     verifyFirebaseToken,
@@ -90,13 +86,6 @@ router.post(
     requireVerifiedEmail,
     propertyController.requestRefund,
 );
-
-// LEGACY — kept for backward compatibility, see propertyController.addProperty
-// router.post(
-//     "/add-property",
-//     verifyFirebaseToken,
-//     propertyController.addProperty,
-// );
 
 router.post(
     "/:listingId/media/:mediaType",

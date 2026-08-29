@@ -1,5 +1,4 @@
 const Joi = require("joi");
-const {propertyTypeFields} = require("./fieldRegistry");
 const {ADDONS_BY_ID} = require("../../data/addons");
 
 /**
@@ -8,17 +7,6 @@ const {ADDONS_BY_ID} = require("../../data/addons");
  */
 const initiatePropertySchema = Joi.object({
   occupancyType: Joi.string().valid("owner_occupied", "tenant_occupied", "vacant").optional(),
-});
-
-/**
- * Stage 2 — draft auto-save envelope (legacy FE path; still used by admin/compat).
- */
-const draftFieldEnvelopeSchema = Joi.object({
-  propertyType: Joi.string()
-      .valid(...Object.keys(propertyTypeFields))
-      .required(),
-  fieldName: Joi.string().required(),
-  fieldValue: Joi.any().required(),
 });
 
 /**
@@ -40,7 +28,6 @@ const listingProcessPatchSchema = Joi.object({
 
 module.exports = {
   initiatePropertySchema,
-  draftFieldEnvelopeSchema,
   listingProcessPatchSchema,
   selectedAddonsSchema,
 };

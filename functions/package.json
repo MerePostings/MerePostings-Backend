@@ -20,6 +20,8 @@
   "main": "index.js",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.93.0",
+    "@hapi/address": "^5.1.1",
+    "@hapi/tlds": "^1.1.7",
     "@hubspot/api-client": "^13.4.0",
     "archiver": "^7.0.1",
     "axios": "^1.16.1",
@@ -39,7 +41,8 @@
     "nodemailer": "^7.0.6",
     "path": "^0.12.7",
     "postmark": "^4.0.7",
-    "stripe": "^22.0.0"
+    "stripe": "^22.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "eslint": "^8.15.0",
