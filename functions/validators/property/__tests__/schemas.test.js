@@ -2,6 +2,7 @@ const {
   initiatePropertySchema,
   listingProcessPatchSchema,
   selectedAddonsSchema,
+  viewedStepsSchema,
 } = require("../schemas");
 const {ADDONS_BY_ID} = require("../../../data/addons");
 
@@ -64,5 +65,17 @@ describe("listingProcessPatchSchema", () => {
       interior: {bedroomsAboveGrade: 3},
     });
     expect(error).toBeUndefined();
+  });
+});
+
+describe("viewedStepsSchema", () => {
+  test("accepts a unique non-empty step id list", () => {
+    const {error} = viewedStepsSchema.validate({viewedSteps: ["garage", "contact"]});
+    expect(error).toBeUndefined();
+  });
+
+  test("rejects duplicate step ids", () => {
+    const {error} = viewedStepsSchema.validate({viewedSteps: ["garage", "garage"]});
+    expect(error).toBeDefined();
   });
 });
