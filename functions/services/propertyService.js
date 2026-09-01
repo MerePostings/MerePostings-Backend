@@ -8,7 +8,14 @@ const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
 const {ACTION_TARGETS} = require("../data/actionTargets");
+const {propertyTypeFields} = require("../validators/property/fieldRegistry");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
+
+const DYNAMIC_PROPERTY_PATHS = [...new Set(
+    Object.values(propertyTypeFields).flatMap(
+        (fields) => Object.values(fields).map((def) => def.path),
+    ),
+)];
 
 const MEDIA_LIMITS = {
   photos: {
@@ -54,6 +61,7 @@ const PROCESS_FIELD_KEYS = [
   "featuresUpgrades",
   "buyerCopy",
   "sellerConfirmations",
+  ...DYNAMIC_PROPERTY_PATHS,
 ];
 
 /** Intermediate step-group keys to delete after migrating to flat. */

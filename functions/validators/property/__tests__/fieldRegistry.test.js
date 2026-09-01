@@ -121,12 +121,22 @@ describe("getFieldDefinition — type-specific fields", () => {
 
   test("rural.outbuildings is a repeatable structure, capped at 15", () => {
     const def = getFieldDefinition("rural", "outbuildings");
+    const validOutbuilding = {
+      structureType: "barn",
+      approximateSize: "20x30",
+      electricity: true,
+      water: false,
+      heating: false,
+      insulated: "not_sure",
+      currentUse: "Storage",
+      additionalDescription: "Older barn",
+    };
     expect(def.schema.safeParse([
-      {structureType: "barn", electricity: true},
-      {structureType: "workshop", insulated: "not_sure"},
+      validOutbuilding,
+      {...validOutbuilding, structureType: "workshop"},
     ]).success).toBe(true);
-    expect(def.schema.safeParse([{structureType: "spaceship"}]).success).toBe(false);
-    expect(def.schema.safeParse(Array(16).fill({structureType: "shed"})).success).toBe(false);
+    expect(def.schema.safeParse([{...validOutbuilding, structureType: "spaceship"}]).success).toBe(false);
+    expect(def.schema.safeParse(Array(16).fill(validOutbuilding)).success).toBe(false);
   });
 
   test("duplex.propertyConfiguration only accepts duplex or triplex", () => {
@@ -140,21 +150,41 @@ describe("getFieldDefinition — type-specific fields", () => {
     const def = getFieldDefinition("duplex", "units");
     expect(getFieldDefinition("duplex", "totalBedrooms")).toBeNull();
 
-    expect(def.schema.safeParse([
-      {
-        unitIdentifier: "Unit 1",
-        bedrooms: 2,
-        bathrooms: {twoPiece: 1},
-        currentOccupancy: "tenant_occupied",
-        tenancy: {tenancyType: "month_to_month", currentMonthlyRent: 1800},
+    const validUnit = {
+      unitIdentifier: "Unit 1",
+      floorLocation: "Main floor",
+      bedrooms: 2,
+      bathrooms: {twoPiece: 1},
+      kitchen: true,
+      livingRoom: true,
+      diningArea: true,
+      laundry: "private",
+      separateEntrance: true,
+      approxUnitSize: "800 sqft",
+      currentOccupancy: "tenant_occupied",
+      additionalUnitFeatures: "Updated kitchen",
+      tenancy: {
+        tenancyType: "month_to_month",
+        currentMonthlyRent: 1800,
+        utilitiesIncluded: ["heat"],
+        tenantPaysUtilities: ["hydro"],
+        vacantPossessionIntended: "no",
       },
-      {unitIdentifier: "Unit 2", bedrooms: 1},
+    };
+
+    expect(def.schema.safeParse([
+      validUnit,
+      {...validUnit, unitIdentifier: "Unit 2", bedrooms: 1},
     ]).success).toBe(true);
 
     // Max 3 units (duplex/triplex only).
-    expect(def.schema.safeParse([{}, {}, {}, {}]).success).toBe(false);
+    expect(def.schema.safeParse([validUnit, validUnit, validUnit, validUnit]).success).toBe(false);
     // Bad nested tenancy value is caught.
-    expect(def.schema.safeParse([{tenancy: {tenancyType: "week_to_week"}}]).success).toBe(false);
+    expect(
+        def.schema.safeParse([
+          {...validUnit, tenancy: {...validUnit.tenancy, tenancyType: "week_to_week"}},
+        ]).success,
+    ).toBe(false);
   });
 
   test("condoTownhouse.townhouseConfiguration captures conventional/stacked/back_to_back", () => {
@@ -246,13 +276,21 @@ describe("commonFields — required plain strings reject empty string", () => {
 describe("nested repeatable-object required strings reject empty string", () => {
   test("otherPrincipalRooms.roomType rejects an empty string", () => {
     const def = getFieldDefinition("detached", "otherPrincipalRooms");
-    expect(def.schema.safeParse([{roomType: ""}]).success).toBe(false);
-    expect(def.schema.safeParse([{roomType: "Sunroom"}]).success).toBe(true);
+    expect(def.schema.safeParse([{roomType: "", notes: "Bright"}]).success).toBe(false);
+    expect(def.schema.safeParse([{roomType: "Sunroom", notes: "Bright"}]).success).toBe(true);
   });
 
   test("rentedLeasedItems.item rejects an empty string", () => {
-    expect(commonFields.rentedLeasedItems.schema.safeParse([{item: ""}]).success).toBe(false);
-    expect(commonFields.rentedLeasedItems.schema.safeParse([{item: "Hot water heater"}]).success).toBe(true);
+    expect(
+        commonFields.rentedLeasedItems.schema.safeParse([
+          {item: "", provider: "Reliance", approxPayment: 45.99, buyoutKnown: "not_sure"},
+        ]).success,
+    ).toBe(false);
+    expect(
+        commonFields.rentedLeasedItems.schema.safeParse([
+          {item: "Hot water heater", provider: "Reliance", approxPayment: 45.99, buyoutKnown: "not_sure"},
+        ]).success,
+    ).toBe(true);
   });
 });
 
@@ -269,13 +307,47 @@ describe("object-shaped fields reject unknown keys (.strict(), no stripUnknown o
 
   test("duplex.units rejects an unrecognized key on a unit, and on its nested tenancy object", () => {
     const def = getFieldDefinition("duplex", "units");
-    expect(def.schema.safeParse([{bedrooms: 2, notAField: true}]).success).toBe(false);
-    expect(def.schema.safeParse([{tenancy: {tenancyType: "month_to_month", notAField: true}}]).success).toBe(false);
-    expect(def.schema.safeParse([{tenancy: {tenancyType: "month_to_month"}}]).success).toBe(true);
+    const validUnit = {
+      unitIdentifier: "Unit 1",
+      floorLocation: "Main floor",
+      bedrooms: 2,
+      bathrooms: {twoPiece: 1},
+      kitchen: true,
+      livingRoom: true,
+      diningArea: true,
+      laundry: "private",
+      separateEntrance: true,
+      approxUnitSize: "800 sqft",
+      currentOccupancy: "tenant_occupied",
+      additionalUnitFeatures: "Updated kitchen",
+      tenancy: {
+        tenancyType: "month_to_month",
+        currentMonthlyRent: 1800,
+        utilitiesIncluded: ["heat"],
+        tenantPaysUtilities: ["hydro"],
+        vacantPossessionIntended: "no",
+      },
+    };
+    expect(def.schema.safeParse([{...validUnit, notAField: true}]).success).toBe(false);
+    expect(
+        def.schema.safeParse([
+          {...validUnit, tenancy: {...validUnit.tenancy, notAField: true}},
+        ]).success,
+    ).toBe(false);
+    expect(def.schema.safeParse([validUnit]).success).toBe(true);
   });
 
   test("ownership.lawyer still allows unknown keys (kept .passthrough(), matching original .unknown(true))", () => {
-    expect(commonFields.lawyer.schema.safeParse({fullName: "Jane Doe", extraField: "ok"}).success).toBe(true);
+    expect(commonFields.lawyer.schema.safeParse({
+      fullName: "Jane Doe",
+      firm: "Doe Law",
+      email: "lawyer@example.com",
+      phone: "4165551234",
+      lawSocietyNumber: "12345",
+      represents: "registered-owner",
+      contactAuthorized: true,
+      extraField: "ok",
+    }).success).toBe(true);
   });
 });
 
@@ -325,9 +397,11 @@ describe("commonFields Joi/Zod parity regression tests", () => {
     expect(commonFields.additionalOwnerNames.schema.safeParse(["Jane Doe"]).success).toBe(true);
   });
 
-  // Task 6 bug fix #2: fixedTermUntil now correctly accepts "" (bypassing format check) but rejects malformed non-empty strings.
-  test("fixedTermUntil accepts an empty string", () => {
-    expect(commonFields.fixedTermUntil.schema.safeParse("").success).toBe(true);
+  // Every field in the registry is now required, no exceptions — the "" escape
+  // hatches these fields used to carry (for parity with old Joi .allow("", null)
+  // behavior) were removed, so "" is rejected exactly like any other missing value.
+  test("fixedTermUntil rejects an empty string", () => {
+    expect(commonFields.fixedTermUntil.schema.safeParse("").success).toBe(false);
   });
 
   test("fixedTermUntil rejects a malformed non-empty date", () => {
@@ -338,19 +412,28 @@ describe("commonFields Joi/Zod parity regression tests", () => {
     expect(commonFields.fixedTermUntil.schema.safeParse("2027-01-01").success).toBe(true);
   });
 
-  // Task 6 bug fix #3a: lawyer.email now correctly accepts "" but rejects malformed non-empty emails.
-  test("lawyer.email accepts an empty string", () => {
-    expect(commonFields.lawyer.schema.safeParse({email: ""}).success).toBe(true);
+  const validLawyer = {
+    fullName: "Jane Doe",
+    firm: "Doe Law",
+    email: "lawyer@example.com",
+    phone: "4165551234",
+    lawSocietyNumber: "12345",
+    represents: "registered-owner",
+    contactAuthorized: true,
+  };
+
+  test("lawyer.email rejects an empty string", () => {
+    expect(commonFields.lawyer.schema.safeParse({...validLawyer, email: ""}).success).toBe(false);
   });
 
   test("lawyer.email rejects a malformed non-empty email", () => {
-    expect(commonFields.lawyer.schema.safeParse({email: "not-an-email"}).success).toBe(false);
+    expect(commonFields.lawyer.schema.safeParse({...validLawyer, email: "not-an-email"}).success).toBe(false);
   });
 
   // TLD-plausibility parity fix: Zod's own email format check doesn't
   // validate the TLD, so "seller@gmail.con" would otherwise slip through.
   test("lawyer.email rejects an email with an implausible TLD", () => {
-    expect(commonFields.lawyer.schema.safeParse({email: "seller@gmail.con"}).success).toBe(false);
+    expect(commonFields.lawyer.schema.safeParse({...validLawyer, email: "seller@gmail.con"}).success).toBe(false);
   });
 
   test("sellerEmail accepts a normal valid email", () => {
@@ -361,12 +444,15 @@ describe("commonFields Joi/Zod parity regression tests", () => {
     expect(commonFields.sellerEmail.schema.safeParse("seller@gmail.con").success).toBe(false);
   });
 
-  // Task 6 bug fix #3b: lawyer.represents now correctly accepts "" but rejects invalid non-empty values.
-  test("lawyer.represents accepts an empty string", () => {
-    expect(commonFields.lawyer.schema.safeParse({represents: ""}).success).toBe(true);
+  test("lawyer.represents rejects an empty string", () => {
+    expect(commonFields.lawyer.schema.safeParse({...validLawyer, represents: ""}).success).toBe(false);
   });
 
   test("lawyer.represents rejects an invalid non-empty enum value", () => {
-    expect(commonFields.lawyer.schema.safeParse({represents: "bogus"}).success).toBe(false);
+    expect(commonFields.lawyer.schema.safeParse({...validLawyer, represents: "bogus"}).success).toBe(false);
+  });
+
+  test("lawyer accepts a fully valid object", () => {
+    expect(commonFields.lawyer.schema.safeParse(validLawyer).success).toBe(true);
   });
 });

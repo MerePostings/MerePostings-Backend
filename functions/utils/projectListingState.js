@@ -3,6 +3,8 @@
  * Keeps MLS/domain fields on `properties`; funnel UX stays only on listingProcesses.
  */
 
+const {propertyTypeFields} = require("../validators/property/fieldRegistry");
+
 const OCCUPANCY = {
   owner: "owner_occupied",
   tenant: "tenant_occupied",
@@ -316,6 +318,19 @@ function projectStateToProperty(state) {
     patch.selectedAddons = state.selectedAddons;
   }
   if (state.saleType) patch.saleType = state.saleType;
+
+  const fieldsForType = beType && propertyTypeFields[beType];
+  if (fieldsForType) {
+    const pathsForType = new Set(Object.values(fieldsForType).map((def) => def.path));
+    for (const path of pathsForType) {
+      const value = state[path];
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      for (const [dbKey, fieldValue] of Object.entries(value)) {
+        if (fieldValue === undefined) continue;
+        patch[`${path}.${dbKey}`] = fieldValue;
+      }
+    }
+  }
 
   return patch;
 }
