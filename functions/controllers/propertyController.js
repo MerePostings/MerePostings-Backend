@@ -125,6 +125,7 @@ const propertyController = {
 
   stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
     const {listingId} = req.params;
+    await propertyService.assertListingComplete(req.user.uid, listingId);
     const selectedAddons = await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
     const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(listingId, req.user.uid, selectedAddons);
     res.status(200).json({clientSecret});

@@ -21,7 +21,7 @@ function mockReqRes(body) {
 describe("validateDraftField", () => {
   test("attaches req.validatedField on a valid known field", () => {
     const {req, res, next} = mockReqRes({
-      propertyType: "detached",
+      propertyType: "semiDetached",
       fieldName: "bedroomsAboveGrade",
       fieldValue: 4,
     });
@@ -30,7 +30,7 @@ describe("validateDraftField", () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.validatedField).toEqual({
-      propertyType: "detached",
+      propertyType: "semiDetached",
       fieldName: "bedroomsAboveGrade",
       fieldValue: 4,
       path: "interior",
@@ -53,7 +53,7 @@ describe("validateDraftField", () => {
 
   test("400s on a field that doesn't exist for the property type", () => {
     const {req, res, next} = mockReqRes({
-      propertyType: "detached",
+      propertyType: "semiDetached",
       fieldName: "totallyMadeUp",
       fieldValue: 4,
     });
@@ -67,7 +67,7 @@ describe("validateDraftField", () => {
 
   test("400s on a value that fails the field's own schema", () => {
     const {req, res, next} = mockReqRes({
-      propertyType: "detached",
+      propertyType: "semiDetached",
       fieldName: "bedroomsAboveGrade",
       fieldValue: 999,
     });

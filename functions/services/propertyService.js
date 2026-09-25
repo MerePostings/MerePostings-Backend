@@ -7,6 +7,8 @@ const {ADDONS_BY_ID} = require("../data/addons");
 const actionService = require("./actionService");
 const notificationService = require("./notificationService");
 const {vetPropertyTypeFields} = require("../utils/vetPropertyTypeFields");
+const {checkListingCompleteness} = require("../utils/listingCompleteness");
+const {toBackendPropertyType} = require("../utils/projectListingState");
 const {ACTION_TARGETS} = require("../data/actionTargets");
 const {propertyTypeFields} = require("../validators/property/fieldRegistry");
 const EDITABLE_STATUSES = new Set(["initiated", "draft"]);
@@ -396,7 +398,9 @@ const propertyService = {
 
     const nextState = {...prev};
     if (typeof incoming.furthestMajorIndex === "number") {
-      nextState.furthestMajorIndex = Math.max(0, Math.min(8, incoming.furthestMajorIndex));
+      // Progress only moves forward, so a page that saves before its draft loads can't rewind it.
+      const prevIndex = typeof prev.furthestMajorIndex === "number" ? prev.furthestMajorIndex : 0;
+      nextState.furthestMajorIndex = Math.max(prevIndex, Math.min(8, incoming.furthestMajorIndex));
     }
     // Sparse PATCH: deep-merge nested objects; arrays/scalars replace.
     for (const k of PROCESS_FIELD_KEYS) {
@@ -544,6 +548,12 @@ const propertyService = {
         const vetted = vetPropertyTypeFields(data.propertyType, data.propertyDetails, data.featuresUpgrades);
         update.propertyDetails = vetted.propertyDetails;
         update.featuresUpgrades = vetted.featuresUpgrades;
+
+        // Drop answers left behind by a condition that no longer applies
+        // (e.g. rent on a unit later marked vacant).
+        const {prune} = checkListingCompleteness(toBackendPropertyType(data.propertyType), data);
+        for (const path of prune.deletePaths) update[path] = FieldValue.delete();
+        Object.assign(update, prune.setValues);
       }
       await docRef.update(update);
 
@@ -959,6 +969,27 @@ const propertyService = {
       if (e instanceof AppError) throw e;
       logger.error("Error in getProgressTracker:", e);
       throw new AppError("Failed to fetch progress tracker. Please try again.", 500);
+    }
+  },
+
+  /** Blocks checkout (422, `details.missingFields`) until every required field is filled in. */
+  assertListingComplete: async (userId, listingId) => {
+    const snap = await db.collection("properties").doc(listingId).get();
+    if (!snap.exists) throw new AppError("Property not found", 404);
+
+    const existing = snap.data();
+    if (existing.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+    if (existing.status === "submitted") {
+      throw new AppError("Cannot edit a listing that has already been submitted", 409);
+    }
+
+    const {complete, problems} = checkListingCompleteness(toBackendPropertyType(existing.propertyType), existing);
+    if (!complete) {
+      throw new AppError(
+          "Some required listing details are missing or invalid. Please complete them before checkout.",
+          422,
+          {missingFields: problems},
+      );
     }
   },
 

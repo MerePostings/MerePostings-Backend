@@ -4,8 +4,11 @@ const {
   commonFields,
   propertyTypeSections,
   fieldLabels,
+  fieldHints,
+  sectionStages,
   ENUM_VALUE_LABELS,
 } = require("../validators/property/fieldRegistry");
+const {propertyTypeCatalog} = require("../data/propertyTypeCatalog");
 
 const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
 
@@ -24,12 +27,12 @@ function humanize(name) {
       .join(" ");
 }
 
-function enumOptionsFor(jsonSchema) {
-  const values = jsonSchema.enum || jsonSchema.items?.enum;
+function enumOptionsFor(jsonSchema, {optionValues, optionLabels = {}} = {}) {
+  const values = optionValues || jsonSchema.enum || jsonSchema.items?.enum;
   if (!values) return undefined;
   return values.map((value) => ({
     value,
-    label: ENUM_VALUE_LABELS[value] || humanize(value),
+    label: optionLabels[value] || ENUM_VALUE_LABELS[value] || humanize(value),
   }));
 }
 
@@ -39,32 +42,87 @@ function toFieldJsonSchema(schema) {
   return jsonSchema;
 }
 
+/** A regex field's flags and message, which JSON Schema's `pattern` can't carry. */
+function patternCheckOf(schema) {
+  let inner = schema;
+  while (inner?._zod?.def?.innerType) inner = inner._zod.def.innerType;
+  const check = (inner?._zod?.def?.checks || []).find((c) => c._zod.def.format === "regex");
+  if (!check) return undefined;
+  const {pattern, error} = check._zod.def;
+  const message = typeof error === "function" ? error({}) : undefined;
+  return {
+    ...(pattern.flags && {flags: pattern.flags}),
+    ...(typeof message === "string" && {message}),
+  };
+}
+
+// Everything the FE needs to render and validate one input, shared by
+// top-level fields and the entries of a repeatable list's itemFields.
+function describeInput(def, label, hint) {
+  const jsonSchema = toFieldJsonSchema(def.schema);
+  const out = {
+    label,
+    required: !def.schema.isOptional(),
+    schema: jsonSchema,
+    options: enumOptionsFor(jsonSchema, def),
+  };
+  if (hint) out.hint = hint;
+  const patternCheck = patternCheckOf(def.schema);
+  if (patternCheck && Object.keys(patternCheck).length) out.patternCheck = patternCheck;
+  if (def.ui) out.ui = def.ui;
+  if (def.requiredWhen) out.requiredWhen = def.requiredWhen;
+  if (def.exclusiveOptions) out.exclusiveOptions = def.exclusiveOptions;
+  if (def.itemFields) {
+    if (def.maxItems !== undefined) out.maxItems = def.maxItems;
+    out.itemFields = {};
+    for (const [key, itemDef] of Object.entries(def.itemFields)) {
+      out.itemFields[key] = describeInput(itemDef, itemDef.label || humanize(key), itemDef.hint);
+    }
+  }
+  return out;
+}
+
 function mapFields(fields, propertyType) {
   const labelsForType = (propertyType && fieldLabels[propertyType]) || {};
+  const hintsForType = (propertyType && fieldHints[propertyType]) || {};
   const out = {};
   for (const [fieldName, def] of Object.entries(fields)) {
-    const jsonSchema = toFieldJsonSchema(def.schema);
     out[fieldName] = {
       path: def.path,
       dbKey: def.dbKey || fieldName,
-      label: labelsForType[fieldName] || humanize(fieldName),
-      required: !def.schema.isOptional(),
-      schema: jsonSchema,
-      options: enumOptionsFor(jsonSchema),
+      ...describeInput(def, labelsForType[fieldName] || humanize(fieldName), hintsForType[fieldName]),
     };
   }
   return out;
 }
 
+// An untitled card is headed by its first field (published as `headerField`).
+function buildGroups(groups, propertyType) {
+  const labels = fieldLabels[propertyType] || {};
+  const hints = fieldHints[propertyType] || {};
+  return groups.map(({title, hint, fields, headerField, ...rest}) => {
+    if (rest.content) return {fields: [], ...rest};
+    if (title) return {title, ...(hint && {hint}), fields, ...(headerField && {headerField}), ...rest};
+    const [first] = fields;
+    return {
+      title: labels[first] || humanize(first),
+      ...(hints[first] && {hint: hints[first]}),
+      fields,
+      headerField: first,
+      ...rest,
+    };
+  });
+}
+
 function buildSections(propertyType, fields) {
   const sectionDefs = propertyTypeSections[propertyType];
   if (!sectionDefs) return [];
-  return sectionDefs.map(({id, title, paths}) => ({
-    id,
-    title,
+  return sectionDefs.map(({paths, groups, ...pageCopy}) => ({
+    ...pageCopy,
     fields: Object.entries(fields)
         .filter(([, def]) => paths.includes(def.path))
         .map(([fieldName]) => fieldName),
+    ...(groups && {groups: buildGroups(groups, propertyType)}),
   }));
 }
 
@@ -99,6 +157,8 @@ function buildPropertySchemaResponse() {
   cachedResponse = deepFreeze({
     $schema: JSON_SCHEMA_DIALECT,
     propertyTypes,
+    propertyTypeOptions: propertyTypeCatalog,
+    stages: sectionStages,
     commonFields: mapFields(commonFields),
     propertyTypeFields: propertyTypeFieldsOut,
     sections: sectionsOut,
