@@ -1,4 +1,4 @@
-const {projectStateToProperty} = require("../projectListingState");
+const {projectStateToProperty, toBackendPropertyType} = require("../projectListingState");
 
 describe("projectStateToProperty — edge inputs", () => {
   test.each([null, undefined, "not an object", 42])(
@@ -36,7 +36,8 @@ describe("propertyType mapping", () => {
     ["condo-apartment", "condoApartment"],
     ["condo-townhouse", "condoTownhouse"],
     ["rural", "rural"],
-    ["duplex-triplex", "duplex"],
+    ["residential-income", "residentialIncome"],
+    ["duplex-triplex", "residentialIncome"],
   ])("maps FE propertyType %s to BE value %s", (fe, be) => {
     const patch = projectStateToProperty({propertyType: fe});
     expect(patch.propertyType).toBe(be);
@@ -576,5 +577,17 @@ describe("basics passthrough", () => {
   test("non-numeric bedrooms/bathrooms are ignored", () => {
     const patch = projectStateToProperty({propertyDetails: {bedrooms: "three"}});
     expect("basics.bedrooms" in patch).toBe(false);
+  });
+});
+
+describe("toBackendPropertyType", () => {
+  test("translates a stored FE slug to the registry key", () => {
+    expect(toBackendPropertyType("residential-income")).toBe("residentialIncome");
+    expect(toBackendPropertyType("semi-detached")).toBe("semiDetached");
+  });
+
+  test("passes a value that is already a registry key through unchanged", () => {
+    expect(toBackendPropertyType("residentialIncome")).toBe("residentialIncome");
+    expect(toBackendPropertyType(undefined)).toBeUndefined();
   });
 });

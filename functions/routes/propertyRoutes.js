@@ -11,6 +11,11 @@ const {
 } = require("../validators/property/schemas.js");
 
 router.get(
+    "/schema",
+    propertyController.getPropertySchema,
+);
+
+router.get(
     "/get-addon-registry",
     verifyFirebaseToken,
     requireVerifiedEmail,

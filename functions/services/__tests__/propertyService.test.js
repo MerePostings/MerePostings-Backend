@@ -1,6 +1,7 @@
 jest.mock("../../config/db");
 jest.mock("../actionService");
 
+const {FieldValue} = require("firebase-admin/firestore");
 const {__refs: dbRefs, resetDbMock} = require("../../config/db");
 const actionService = require("../actionService");
 const propertyService = require("../propertyService");
@@ -184,6 +185,24 @@ describe("propertyService.markSubmitted", () => {
     expect(updateArg).not.toHaveProperty("propertyDetails");
     expect(updateArg).not.toHaveProperty("featuresUpgrades");
   });
+  test("prunes answers whose condition no longer applies (residential income)", async () => {
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      data: () => ({
+        ownerId: "user-1",
+        propertyType: "residential-income",
+        exteriorOutdoor: {garageType: "none", garageSpaces: "2"},
+        unitTenancy: {unitTenancies: [{occupancy: "vacant", monthlyRent: 1800}]},
+      }),
+    });
+
+    await propertyService.markSubmitted("listing-1");
+
+    const updateArg = dbRefs.docRef.update.mock.calls[0][0];
+    expect(updateArg["exteriorOutdoor.garageSpaces"].isEqual(FieldValue.delete())).toBe(true);
+    expect(updateArg["unitTenancy.unitTenancies"]).toEqual([{occupancy: "vacant"}]);
+    expect(updateArg.status).toBe("submitted");
+  });
 });
 
 describe("propertyService.saveListingProcess", () => {
@@ -258,6 +277,25 @@ describe("propertyService.saveListingProcess", () => {
           },
         }),
     );
+  });
+
+  test.each([
+    [6, 3, 6],
+    [3, 6, 6],
+    [0, 12, 8],
+  ])("furthestMajorIndex only moves forward (stored %i, sent %i → %i)", async (stored, sent, expected) => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", furthestMajorIndex: stored, occupancy: "owner"}),
+    });
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+
+    const result = await propertyService.saveListingProcess("user-1", "listing-1", {
+      state: {furthestMajorIndex: sent},
+    });
+
+    expect(result.state.furthestMajorIndex).toBe(expected);
+    expect(dbRefs.docRef.update).toHaveBeenCalledWith(expect.objectContaining({furthestMajorIndex: expected}));
   });
 
   test("replaces scalar top-level fields", async () => {
@@ -629,7 +667,7 @@ describe("propertyService.saveSelectedAddons", () => {
     ).rejects.toMatchObject({statusCode: 409});
   });
 
-  test("throws 400 for an unknown addon id even if Joi validation was bypassed", async () => {
+  test("throws 400 for an unknown addon id even if schema validation was bypassed", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({exists: true, data: () => ({ownerId: "user-1", status: "draft"})});
 
     await expect(
@@ -657,6 +695,42 @@ describe("propertyService.saveSelectedAddons", () => {
     await expect(
         propertyService.saveSelectedAddons("user-1", "listing-1", ["professional_photography"]),
     ).rejects.toMatchObject({statusCode: 500});
+  });
+});
+
+describe("propertyService.assertListingComplete", () => {
+  beforeEach(() => {
+    resetDbMock();
+  });
+
+  const listing = (overrides) => ({exists: true, data: () => ({ownerId: "user-1", status: "draft", ...overrides})});
+
+  test("throws 404 / 403 / 409 on the usual ownership checks", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({exists: false});
+    await expect(propertyService.assertListingComplete("user-1", "listing-1")).rejects.toMatchObject({statusCode: 404});
+
+    dbRefs.docRef.get.mockResolvedValueOnce(listing({ownerId: "someone-else"}));
+    await expect(propertyService.assertListingComplete("user-1", "listing-1")).rejects.toMatchObject({statusCode: 403});
+
+    dbRefs.docRef.get.mockResolvedValueOnce(listing({status: "submitted"}));
+    await expect(propertyService.assertListingComplete("user-1", "listing-1")).rejects.toMatchObject({statusCode: 409});
+  });
+
+  test("rejects an incomplete residential-income listing with 422 and the missing fields", async () => {
+    // Stored as the raw FE slug by the listing-process save path.
+    dbRefs.docRef.get.mockResolvedValueOnce(listing({propertyType: "residential-income"}));
+
+    const error = await propertyService.assertListingComplete("user-1", "listing-1").catch((e) => e);
+
+    expect(error.statusCode).toBe(422);
+    expect(error.details.missingFields).toEqual(expect.arrayContaining([
+      {field: "unitCount", section: "income-configuration", message: "This field is required"},
+    ]));
+  });
+
+  test("lets listings whose property type isn't enforced through", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce(listing({propertyType: "not-a-type"}));
+    await expect(propertyService.assertListingComplete("user-1", "listing-1")).resolves.toBeUndefined();
   });
 });
 
