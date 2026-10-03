@@ -5,6 +5,7 @@ const AppError = require("../utils/AppError");
 const {calendar, calendarId, impersonatedUser} = require("../config/googleOAuth");
 const {formatTime} = require("../utils/formatDate");
 const {meetingScheduled} = require("./mailService");
+const {createContactIfNotExists} = require("../config/hubspotSDK");
 const {DateTime} = require("luxon");
 
 const timeZone = "America/Toronto";
@@ -65,6 +66,7 @@ const googleFunctionsService = {
 
       const email = userDoc.data().email;
       const name = userDoc.data().firstName;
+      const lastName = userDoc.data().lastName;
       const link = "https://us05web.zoom.us/j/84438162721?pwd=nCQ79HCGtLcWAGRaldLwNJCN4ZDQaK.1";
       const humanDate = `${month}/${date}/${year}`;
 
@@ -110,6 +112,18 @@ const googleFunctionsService = {
 
       await userRef.update({lastMeeting: DateTime.now().toJSDate()});
       await meetingScheduled(email, name, humanDate, time, link);
+
+      try {
+        await createContactIfNotExists({
+          email,
+          firstname: name,
+          lastname: lastName,
+          platform_affiliation: "Mere Postings",
+        });
+      } catch (hubspotError) {
+        logger.error("HubSpot contact failed", hubspotError);
+      }
+
       return response.data;
     } catch (error) {
       if (error instanceof AppError) throw error;

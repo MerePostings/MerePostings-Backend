@@ -1,4 +1,6 @@
 const postmark = require("postmark");
+const logger = require("firebase-functions/logger");
+const {createContactIfNotExists} = require("../config/hubspotSDK");
 
 const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
 
@@ -734,7 +736,7 @@ const meetingScheduled = async (email, name, date, time, link) => {
   });
 };
 
-const guestMeetingRequest = async (email, year, month, day, time) => {
+const guestMeetingRequest = async ({email, year, month, day, time}) => {
   const dateStr = new Date(year, month - 1, day).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -817,6 +819,15 @@ const guestMeetingRequest = async (email, year, month, day, time) => {
 </html>`,
     MessageStream: "notifications",
   });
+
+  try {
+    await createContactIfNotExists({
+      email,
+      platform_affiliation: "Mere Postings",
+    });
+  } catch (error) {
+    logger.error("HubSpot guest contact failed", error);
+  }
 };
 
 // ── 2. Callback request notification ─────────────────────────────────────────
