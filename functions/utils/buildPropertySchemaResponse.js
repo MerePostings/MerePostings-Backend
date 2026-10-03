@@ -1,4 +1,5 @@
 const {z} = require("zod");
+const crypto = require("crypto");
 const {
   propertyTypeFields,
   commonFields,
@@ -140,6 +141,15 @@ function deepFreeze(value) {
 
 let cachedResponse = null;
 
+// Content-hash version: recomputed only when the built payload changes
+// (i.e. on deploy). Deterministic because the builder iterates registry
+// keys in insertion order, so JSON.stringify key order is stable.
+const SCHEMA_VERSION_HASH_LENGTH = 12;
+
+function computeSchemaVersion(payload) {
+  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, SCHEMA_VERSION_HASH_LENGTH);
+}
+
 function buildPropertySchemaResponse() {
   if (cachedResponse) {
     return cachedResponse;
@@ -154,7 +164,7 @@ function buildPropertySchemaResponse() {
     sectionsOut[propertyType] = buildSections(propertyType, propertyTypeFields[propertyType]);
   }
 
-  cachedResponse = deepFreeze({
+  const payload = {
     $schema: JSON_SCHEMA_DIALECT,
     propertyTypes,
     propertyTypeOptions: propertyTypeCatalog,
@@ -162,9 +172,22 @@ function buildPropertySchemaResponse() {
     commonFields: mapFields(commonFields),
     propertyTypeFields: propertyTypeFieldsOut,
     sections: sectionsOut,
+  };
+
+  cachedResponse = deepFreeze({
+    version: computeSchemaVersion(payload),
+    ...payload,
   });
 
   return cachedResponse;
 }
 
-module.exports = {buildPropertySchemaResponse};
+function getPropertySchemaVersion() {
+  return buildPropertySchemaResponse().version;
+}
+
+function getPropertySchemaEtag() {
+  return `"${getPropertySchemaVersion()}"`;
+}
+
+module.exports = {buildPropertySchemaResponse, getPropertySchemaVersion, getPropertySchemaEtag};
