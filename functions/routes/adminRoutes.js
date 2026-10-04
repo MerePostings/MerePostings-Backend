@@ -22,6 +22,7 @@ router.get("/users", adminController.getUsers);
 router.get("/transactions", adminController.getTransactions);
 router.get("/listings", adminController.getListings);
 router.get("/listings/:listingId", adminController.getListingById);
+router.get("/listings/:listingId/completeness", adminController.getListingCompleteness);
 router.patch("/listings/:listingId", adminController.updateListing);
 router.patch("/listings/:listingId/status", adminController.updateListingStatus);
 router.get("/listings/:listingId/progress-tracker", adminController.getProgressTracker);

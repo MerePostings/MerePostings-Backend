@@ -7,6 +7,8 @@ const axios = require("axios");
 const {PassThrough} = require("stream");
 const notificationService = require("./notificationService");
 const {ACTION_TARGETS} = require("../data/actionTargets");
+const {checkListingCompleteness} = require("../utils/listingCompleteness");
+const {toBackendPropertyType} = require("../utils/projectListingState");
 
 const STATUS_SEVERITY = {draft: "info", pending: "info", active: "success", closed: "info"};
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
@@ -304,6 +306,14 @@ const adminService = {
       logger.error("[admin] Failed to fetch listing:", e);
       throw new AppError("Failed to fetch listing. Please try again.", 500);
     }
+  },
+
+  getListingCompleteness: async (listingId) => {
+    const doc = await db.collection("properties").doc(listingId).get();
+    if (!doc.exists) throw new AppError("Listing not found", 404);
+    const propertyType = toBackendPropertyType(doc.data().propertyType);
+    const {checked, complete, problems} = checkListingCompleteness(propertyType, doc.data());
+    return {propertyType, checked, complete, problems};
   },
 
   updateListing: async (listingId, payload) => {
