@@ -1,4 +1,5 @@
-const {buildPropertySchemaResponse} = require("../buildPropertySchemaResponse");
+const {buildPropertySchemaResponse, getPropertySchemaVersion, getPropertySchemaEtag} =
+  require("../buildPropertySchemaResponse");
 
 describe("buildPropertySchemaResponse", () => {
   const result = buildPropertySchemaResponse();
@@ -433,5 +434,28 @@ describe("buildPropertySchemaResponse — pattern checks", () => {
 
   test("fields without a regex publish no pattern check", () => {
     expect(result.propertyTypeFields.residentialIncome.approxYearBuilt.patternCheck).toBeUndefined();
+  });
+});
+
+describe("buildPropertySchemaResponse — versioning", () => {
+  test("publishes a short hex content-hash version", () => {
+    const {version} = buildPropertySchemaResponse();
+    expect(version).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  test("version and etag helpers agree with the full response", () => {
+    const result = buildPropertySchemaResponse();
+    expect(getPropertySchemaVersion()).toBe(result.version);
+    expect(getPropertySchemaEtag()).toBe(`"${result.version}"`);
+  });
+
+  test("version is stable across calls (memoized with the payload)", () => {
+    expect(buildPropertySchemaResponse().version).toBe(buildPropertySchemaResponse().version);
+  });
+
+  test("version survives deep-freeze without leaking into field schemas", () => {
+    const result = buildPropertySchemaResponse();
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(result.commonFields.askingPrice.schema.version).toBeUndefined();
   });
 });
