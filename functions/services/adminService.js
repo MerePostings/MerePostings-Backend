@@ -9,9 +9,19 @@ const notificationService = require("./notificationService");
 const {ACTION_TARGETS} = require("../data/actionTargets");
 const {checkListingCompleteness} = require("../utils/listingCompleteness");
 const {toBackendPropertyType} = require("../utils/projectListingState");
+const {validateAdminListingPatch, applyPatch} = require("../validators/admin/listingPatch");
 
 const STATUS_SEVERITY = {draft: "info", pending: "info", active: "success", closed: "info"};
 const humanizeStatus = (status) => status.charAt(0).toUpperCase() + status.slice(1);
+
+// Statuses the seller can still edit; their stale answers are pruned at submission instead.
+const SELLER_EDITABLE_STATUSES = new Set(["initiated", "draft"]);
+
+function completenessOf(data) {
+  const propertyType = toBackendPropertyType(data.propertyType);
+  const {checked, complete, problems} = checkListingCompleteness(propertyType, data);
+  return {propertyType, checked, complete, problems};
+}
 
 const adminService = {
   handleAdminLogin: async (email) => {
@@ -311,33 +321,43 @@ const adminService = {
   getListingCompleteness: async (listingId) => {
     const doc = await db.collection("properties").doc(listingId).get();
     if (!doc.exists) throw new AppError("Listing not found", 404);
-    const propertyType = toBackendPropertyType(doc.data().propertyType);
-    const {checked, complete, problems} = checkListingCompleteness(propertyType, doc.data());
-    return {propertyType, checked, complete, problems};
+    return completenessOf(doc.data());
   },
 
-  updateListing: async (listingId, payload) => {
+  /** Applies an admin `{set, unset}` patch of dotted field paths (see validators/admin/listingPatch.js). */
+  updateListing: async (listingId, patch) => {
+    const {FieldValue} = require("firebase-admin/firestore");
+    const docRef = db.collection("properties").doc(listingId);
     try {
-      const {FieldValue} = require("firebase-admin/firestore");
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(docRef);
+        if (!snap.exists) throw new AppError("Listing not found", 404);
+        const current = snap.data();
 
-      const clean = (obj) => {
-        if (!obj || typeof obj !== "object") return obj;
-        return Object.fromEntries(
-            Object.entries(obj)
-                .filter(([_, v]) => v !== undefined)
-                .map(([k, v]) => [k, v && typeof v === "object" && !Array.isArray(v) ? clean(v) : v]),
-        );
-      };
+        const problems = validateAdminListingPatch(current.propertyType, patch);
+        if (problems.length) throw new AppError("Some fields are invalid.", 400, {fields: problems});
 
-      const cleanedPayload = clean(payload);
+        const update = {...(patch.set || {})};
+        for (const path of patch.unset || []) update[path] = FieldValue.delete();
 
-      await db.collection("properties").doc(listingId).set(
-          {...cleanedPayload, updatedAt: FieldValue.serverTimestamp()},
-          {merge: true},
-      );
+        // Same cleanup as seller submission: past draft, answers whose
+        // condition no longer holds are dropped rather than left behind.
+        if (!SELLER_EDITABLE_STATUSES.has(current.status)) {
+          const merged = applyPatch(current, patch);
+          const {prune} = checkListingCompleteness(toBackendPropertyType(merged.propertyType), merged);
+          for (const path of prune.deletePaths) update[path] = FieldValue.delete();
+          Object.assign(update, prune.setValues);
+        }
 
-      return {success: true};
+        update.updatedAt = FieldValue.serverTimestamp();
+        tx.update(docRef, update);
+      });
+
+      const saved = await docRef.get();
+      const data = saved.data();
+      return {listing: {id: saved.id, ...data}, completeness: completenessOf(data)};
     } catch (e) {
+      if (e instanceof AppError) throw e;
       logger.error("[admin] Failed to update listing:", e);
       throw new AppError("Failed to update listing. Please try again.", 500);
     }

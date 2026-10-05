@@ -755,7 +755,7 @@ const guestMeetingRequest = async ({email, year, month, day, time}) => {
     day: "numeric",
   });
 
-  return sendEmailSafely({
+  const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
     Subject: `New Guest Meeting Request — ${dateStr} at ${time}`,
@@ -838,6 +838,8 @@ const guestMeetingRequest = async ({email, year, month, day, time}) => {
   } catch (error) {
     logger.error("HubSpot guest contact failed", error);
   }
+
+  return result;
 };
 
 // ── 2. Callback request notification ─────────────────────────────────────────

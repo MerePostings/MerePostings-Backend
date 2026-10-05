@@ -4,6 +4,9 @@ jest.mock("postmark", () => ({
   ServerClient: jest.fn(() => ({sendEmail: mockSendEmail})),
 }));
 jest.mock("firebase-functions/logger", () => ({error: jest.fn()}));
+// The real module loads .env on require, which would re-set
+// POSTMARK_MESSAGE_STREAM inside isolateModules.
+jest.mock("../../config/hubspotSDK", () => ({createContactIfNotExists: jest.fn()}));
 
 const logger = require("firebase-functions/logger");
 
