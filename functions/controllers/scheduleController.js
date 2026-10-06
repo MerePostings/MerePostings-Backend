@@ -13,7 +13,7 @@ const scheduleController = {
 
   createCalendarEvent: async (req, res, next) => {
     try {
-      const {year, month, date, time} = req.body;
+      const {year, month, date, time, phone, topic, notes} = req.body;
       const userID = req.user.uid;
 
 
@@ -26,6 +26,7 @@ const scheduleController = {
           month,
           year,
           userID,
+          {phone, topic, notes},
       );
 
       res.status(201).json({

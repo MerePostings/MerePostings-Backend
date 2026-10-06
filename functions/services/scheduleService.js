@@ -5,7 +5,7 @@ const AppError = require("../utils/AppError");
 const {calendar, calendarId, impersonatedUser} = require("../config/googleOAuth");
 const {formatTime} = require("../utils/formatDate");
 const {meetingScheduled} = require("./mailService");
-const {createContactIfNotExists} = require("../config/hubspotSDK");
+const {recordContactInquiry} = require("../config/hubspotSDK");
 const {DateTime} = require("luxon");
 
 const timeZone = "America/Toronto";
@@ -37,8 +37,9 @@ const googleFunctionsService = {
     }
   },
 
-  createCalendarEvent: async (startDateTime, date, time, month, year, userID) => {
+  createCalendarEvent: async (startDateTime, date, time, month, year, userID, details = {}) => {
     try {
+      const {phone, topic, notes} = details;
       const userRef = db.collection("users").doc(userID);
       const userDoc = await userRef.get();
 
@@ -82,8 +83,17 @@ const googleFunctionsService = {
         throw new AppError("Time slot already booked", 409);
       }
 
+      const description = [
+        topic && `Topic: ${topic}`,
+        phone && `Phone: ${phone}`,
+        notes && `Notes: ${notes}`,
+      ].filter(Boolean).join("\n");
+
       const event = {
-        summary: `Mere Postings meeting with ${email}`,
+        summary: topic ?
+          `Mere Postings — ${topic} with ${email}` :
+          `Mere Postings meeting with ${email}`,
+        description: description || undefined,
         start: {
           dateTime: startDate.toISO(),
           timeZone,
@@ -114,11 +124,19 @@ const googleFunctionsService = {
       await meetingScheduled(email, name, humanDate, time, link);
 
       try {
-        await createContactIfNotExists({
+        await recordContactInquiry({
           email,
           firstname: name,
           lastname: lastName,
-          platform_affiliation: "Mere Postings",
+          phone,
+          noteBody: [
+            "Inquiry: zoom_meeting",
+            topic && `Topic: ${topic}`,
+            `Date: ${humanDate}`,
+            `Time: ${time}`,
+            phone && `Phone: ${phone}`,
+            notes && `Notes: ${notes}`,
+          ].filter(Boolean).join("\n"),
         });
       } catch (hubspotError) {
         logger.error("HubSpot contact failed", hubspotError);

@@ -6,6 +6,18 @@ const hubspotClient = new hubspot.Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
 });
 
+const NOTE_TO_CONTACT_ASSOCIATION = 202;
+
+const compactProperties = (properties) =>
+  Object.fromEntries(
+      Object.entries(properties).filter(([, value]) => value != null && String(value).trim() !== ""),
+  );
+
+const isRejectedAffiliation = (error, properties) =>
+  error?.code === 400 &&
+  properties.platform_affiliation &&
+  JSON.stringify(error.body || "").includes("INVALID_OPTION");
+
 
 const findContactByEmail = async (email) => {
   try {
@@ -37,35 +49,95 @@ const findContactByEmail = async (email) => {
   }
 };
 
-
-const createContactIfNotExists = async (properties) => {
-  const email = properties.email;
-  if (!email) throw new Error("Email is required to check for duplicates.");
-
-  const existingContact = await findContactByEmail(email);
-  if (existingContact) {
-    logger.info("Contact already exists with ID:", existingContact.id);
-    return existingContact.id;
-  }
-
+const writeContact = async (existingId, properties) => {
   try {
+    if (existingId) {
+      const rest = {...properties};
+      delete rest.email;
+      await hubspotClient.crm.contacts.basicApi.update(existingId, {properties: rest});
+      return existingId;
+    }
     const response = await hubspotClient.crm.contacts.basicApi.create({properties});
     return response.id;
   } catch (error) {
-    const rejectedAffiliation = error?.code === 400 &&
-      properties.platform_affiliation &&
-      JSON.stringify(error.body || "").includes("INVALID_OPTION");
-    if (!rejectedAffiliation) throw error;
+    if (!isRejectedAffiliation(error, properties)) throw error;
 
     logger.error(
-        "HubSpot rejected platform_affiliation; creating contact without it",
+        "HubSpot rejected platform_affiliation; retrying without it",
         error,
     );
     const rest = {...properties};
     delete rest.platform_affiliation;
+    if (existingId) {
+      const updateRest = {...rest};
+      delete updateRest.email;
+      await hubspotClient.crm.contacts.basicApi.update(existingId, {properties: updateRest});
+      return existingId;
+    }
     const response = await hubspotClient.crm.contacts.basicApi.create({properties: rest});
     return response.id;
   }
 };
 
-module.exports= {createContactIfNotExists};
+const upsertContact = async (properties) => {
+  const email = properties.email;
+  if (!email) throw new Error("Email is required to check for duplicates.");
+
+  const payload = compactProperties(properties);
+  const existingContact = await findContactByEmail(email);
+  if (existingContact) {
+    logger.info("Updating existing HubSpot contact:", existingContact.id);
+    return writeContact(existingContact.id, payload);
+  }
+
+  return writeContact(null, payload);
+};
+
+const createContactIfNotExists = async (properties) => upsertContact(properties);
+
+const addContactNote = async (contactId, body) => {
+  if (!contactId || !body) return;
+
+  await hubspotClient.crm.objects.notes.basicApi.create({
+    properties: {
+      hs_timestamp: Date.now().toString(),
+      hs_note_body: body,
+    },
+    associations: [
+      {
+        to: {id: String(contactId)},
+        types: [
+          {
+            associationCategory: "HUBSPOT_DEFINED",
+            associationTypeId: NOTE_TO_CONTACT_ASSOCIATION,
+          },
+        ],
+      },
+    ],
+  });
+};
+
+const recordContactInquiry = async ({email, firstname, lastname, phone, noteBody}) => {
+  if (!email) return null;
+
+  const contactId = await upsertContact({
+    email,
+    firstname,
+    lastname,
+    phone,
+    platform_affiliation: "Mere Postings",
+  });
+
+  if (noteBody) {
+    await addContactNote(contactId, noteBody);
+  }
+
+  return contactId;
+};
+
+module.exports = {
+  createContactIfNotExists,
+  upsertContact,
+  addContactNote,
+  recordContactInquiry,
+};

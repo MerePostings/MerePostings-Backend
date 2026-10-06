@@ -1,6 +1,6 @@
 const postmark = require("postmark");
 const logger = require("firebase-functions/logger");
-const {createContactIfNotExists} = require("../config/hubspotSDK");
+const {recordContactInquiry} = require("../config/hubspotSDK");
 
 const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
 
@@ -17,6 +17,42 @@ const sendEmailSafely = (message) =>
       message: err.message,
     });
   });
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+const splitName = (name = "") => {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {firstname: undefined, lastname: undefined};
+  if (parts.length === 1) return {firstname: parts[0], lastname: undefined};
+  return {firstname: parts[0], lastname: parts.slice(1).join(" ")};
+};
+
+const emailRow = (label, value) => {
+  if (!value) return "";
+  return `<tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;vertical-align:top;">${escapeHtml(label)}</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;line-height:1.7;white-space:pre-wrap;">${escapeHtml(value)}</td>
+                </tr>`;
+};
+
+const noteLines = (fields) =>
+  fields
+      .filter(([, value]) => value != null && String(value).trim() !== "")
+      .map(([label, value]) => `${label}: ${value}`)
+      .join("\n");
+
+const recordInquirySafely = async (payload) => {
+  try {
+    await recordContactInquiry(payload);
+  } catch (error) {
+    logger.error("HubSpot contact inquiry failed", error);
+  }
+};
 
 const sendVerificationEmail = async (
     email,
@@ -747,7 +783,7 @@ const meetingScheduled = async (email, name, date, time, link) => {
   });
 };
 
-const guestMeetingRequest = async ({email, year, month, day, time}) => {
+const guestMeetingRequest = async ({email, year, month, day, time, phone, topic, notes}) => {
   const dateStr = new Date(year, month - 1, day).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -758,7 +794,7 @@ const guestMeetingRequest = async ({email, year, month, day, time}) => {
   const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
-    Subject: `New Guest Meeting Request — ${dateStr} at ${time}`,
+    Subject: `New Guest Meeting Request${topic ? ` — ${topic}` : ""} — ${dateStr} at ${time}`,
     HtmlBody: `
 <!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -796,20 +832,12 @@ const guestMeetingRequest = async ({email, year, month, day, time}) => {
               </p>
  
               <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
-                <tr>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Date</td>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${dateStr}</td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;">Time</td>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${time}</td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 0;font-weight:600;">Guest Email</td>
-                  <td style="padding:10px 0;">
-                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
-                  </td>
-                </tr>
+                ${emailRow("Date", dateStr)}
+                ${emailRow("Time", time)}
+                ${emailRow("Guest Email", email)}
+                ${emailRow("Phone", phone)}
+                ${emailRow("Topic", topic)}
+                ${emailRow("Notes", notes)}
               </table>
             </td>
           </tr>
@@ -830,24 +858,28 @@ const guestMeetingRequest = async ({email, year, month, day, time}) => {
 </html>`,
   });
 
-  try {
-    await createContactIfNotExists({
-      email,
-      platform_affiliation: "Mere Postings",
-    });
-  } catch (error) {
-    logger.error("HubSpot guest contact failed", error);
-  }
+  await recordInquirySafely({
+    email,
+    phone,
+    noteBody: noteLines([
+      ["Inquiry", "zoom_meeting"],
+      ["Topic", topic],
+      ["Date", dateStr],
+      ["Time", time],
+      ["Phone", phone],
+      ["Notes", notes],
+    ]),
+  });
 
   return result;
 };
 
 // ── 2. Callback request notification ─────────────────────────────────────────
-const callbackRequest = async (time, subject, email) => {
-  return sendEmailSafely({
+const callbackRequest = async ({name, email, phone, time, topic, notes}) => {
+  const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
-    Subject: `New Callback Request${subject ? ` — ${subject}` : ""}`,
+    Subject: `New Callback Request${topic ? ` — ${topic}` : ""}`,
     HtmlBody: `
 <!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -883,21 +915,12 @@ const callbackRequest = async (time, subject, email) => {
               </p>
  
               <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
-                <tr>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Email</td>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">
-                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 0;border-bottom:${subject ? "1px solid #eeeeee" : "none"};font-weight:600;">Preferred Time</td>
-                  <td style="padding:10px 0;border-bottom:${subject ? "1px solid #eeeeee" : "none"};">${time}</td>
-                </tr>
-                ${subject ? `
-                <tr>
-                  <td style="padding:10px 0;font-weight:600;">Subject</td>
-                  <td style="padding:10px 0;">${subject}</td>
-                </tr>` : ""}
+                ${emailRow("Name", name)}
+                ${emailRow("Email", email)}
+                ${emailRow("Phone", phone)}
+                ${emailRow("Best time", time)}
+                ${emailRow("Topic", topic)}
+                ${emailRow("Notes", notes)}
               </table>
             </td>
           </tr>
@@ -917,14 +940,32 @@ const callbackRequest = async (time, subject, email) => {
 </body>
 </html>`,
   });
+
+  const {firstname, lastname} = splitName(name);
+  await recordInquirySafely({
+    email,
+    firstname,
+    lastname,
+    phone,
+    noteBody: noteLines([
+      ["Inquiry", "callback"],
+      ["Topic", topic],
+      ["Name", name],
+      ["Phone", phone],
+      ["Best time", time],
+      ["Notes", notes],
+    ]),
+  });
+
+  return result;
 };
 
 // ── 3. Send-a-message notification ───────────────────────────────────────────
-const contactMessage = async (name, email, message) => {
-  return sendEmailSafely({
+const contactMessage = async ({name, email, phone, property, topic, message}) => {
+  const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
-    Subject: `New Message from ${name}`,
+    Subject: `New Message from ${name}${topic ? ` — ${topic}` : ""}`,
     HtmlBody: `
 <!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -960,20 +1001,12 @@ const contactMessage = async (name, email, message) => {
               </p>
  
               <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
-                <tr>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;width:140px;">Name</td>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">${name}</td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-weight:600;">Email</td>
-                  <td style="padding:10px 0;border-bottom:1px solid #eeeeee;">
-                    <a href="mailto:${email}" style="color:#154360;">${email}</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 0;font-weight:600;vertical-align:top;">Message</td>
-                  <td style="padding:10px 0;line-height:1.7;white-space:pre-wrap;">${message}</td>
-                </tr>
+                ${emailRow("Name", name)}
+                ${emailRow("Email", email)}
+                ${emailRow("Phone", phone)}
+                ${emailRow("Property / MLS", property)}
+                ${emailRow("Topic", topic)}
+                ${emailRow("Message", message)}
               </table>
             </td>
           </tr>
@@ -993,6 +1026,24 @@ const contactMessage = async (name, email, message) => {
 </body>
 </html>`,
   });
+
+  const {firstname, lastname} = splitName(name);
+  await recordInquirySafely({
+    email,
+    firstname,
+    lastname,
+    phone,
+    noteBody: noteLines([
+      ["Inquiry", "message"],
+      ["Topic", topic],
+      ["Name", name],
+      ["Phone", phone],
+      ["Property / MLS", property],
+      ["Message", message],
+    ]),
+  });
+
+  return result;
 };
 
 const sendNotificationEmail = async (email, subject, htmlBody) => {
