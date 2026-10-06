@@ -23,6 +23,7 @@ app.use(
         `${process.env.FRONTEND_URL}`,
         "https://mere-postings-admin-staging.web.app",
         "https://mere-posting-staging.web.app",
+        "https://merepostings.com",
       ],
       exposedHeaders: ["X-Zip-Filename"],
       credentials: true,

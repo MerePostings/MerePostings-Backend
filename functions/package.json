@@ -7,7 +7,7 @@
     "shell": "firebase functions:shell",
     "start": "firebase emulators:start --only functions --project mere-posting-staging",
     "deploy:staging": "firebase use mere-posting-staging && firebase deploy --only functions",
-    "deploy:prod": "firebase use mere-postings && firebase deploy --only functions",
+    "deploy:prod": "firebase use mere-postings-auei && firebase deploy --only functions",
     "logs": "firebase functions:log",
     "test": "jest",
     "test:watch": "jest --watch",
