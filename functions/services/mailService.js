@@ -1,13 +1,29 @@
 const postmark = require("postmark");
+const logger = require("firebase-functions/logger");
+const {createContactIfNotExists} = require("../config/hubspotSDK");
 
 const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
+
+const MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
+
+const sendEmail = (message) =>
+  client.sendEmail({...message, MessageStream: MESSAGE_STREAM});
+
+const sendEmailSafely = (message) =>
+  sendEmail(message).catch((err) => {
+    logger.error("[mail] Postmark send failed", {
+      subject: message.Subject,
+      code: err.code,
+      message: err.message,
+    });
+  });
 
 const sendVerificationEmail = async (
     email,
     emailVerificationLink,
     firstName,
 ) => {
-  client.sendEmail({
+  return sendEmailSafely({
     from: `${process.env.EMAILUSER}`,
     to: `${email}`,
     Subject: "Verify your email address",
@@ -260,7 +276,6 @@ const sendVerificationEmail = async (
           </div>
           </body>
       </html>`,
-    MessageStream: "notifications",
   });
 };
 
@@ -270,7 +285,7 @@ const sendPaymentConfirmationEmail = async (
     amountPaid,
     listingLink,
 ) => {
-  client.sendEmail({
+  return sendEmailSafely({
     from: `${process.env.EMAILUSER}`,
     to: `${email}`,
     Subject: "Payment Confirmation - Your Listing is Now Active",
@@ -525,12 +540,11 @@ const sendPaymentConfirmationEmail = async (
           </div>
           </body>
       </html>`,
-    MessageStream: "notifications",
   });
 };
 
 const meetingScheduled = async (email, name, date, time, link) => {
-  client.sendEmail({
+  return sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: `${email}`,
     Subject: `Your Meeting Has Been Scheduled`,
@@ -730,11 +744,10 @@ const meetingScheduled = async (email, name, date, time, link) => {
           </div>
         </body>
       </html>`,
-    MessageStream: "notifications",
   });
 };
 
-const guestMeetingRequest = async (email, year, month, day, time) => {
+const guestMeetingRequest = async ({email, year, month, day, time}) => {
   const dateStr = new Date(year, month - 1, day).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
@@ -742,7 +755,7 @@ const guestMeetingRequest = async (email, year, month, day, time) => {
     day: "numeric",
   });
 
-  client.sendEmail({
+  const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
     Subject: `New Guest Meeting Request — ${dateStr} at ${time}`,
@@ -815,13 +828,23 @@ const guestMeetingRequest = async (email, year, month, day, time) => {
  
 </body>
 </html>`,
-    MessageStream: "notifications",
   });
+
+  try {
+    await createContactIfNotExists({
+      email,
+      platform_affiliation: "Mere Postings",
+    });
+  } catch (error) {
+    logger.error("HubSpot guest contact failed", error);
+  }
+
+  return result;
 };
 
 // ── 2. Callback request notification ─────────────────────────────────────────
 const callbackRequest = async (time, subject, email) => {
-  client.sendEmail({
+  return sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
     Subject: `New Callback Request${subject ? ` — ${subject}` : ""}`,
@@ -893,13 +916,12 @@ const callbackRequest = async (time, subject, email) => {
  
 </body>
 </html>`,
-    MessageStream: "notifications",
   });
 };
 
 // ── 3. Send-a-message notification ───────────────────────────────────────────
 const contactMessage = async (name, email, message) => {
-  client.sendEmail({
+  return sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
     Subject: `New Message from ${name}`,
@@ -970,17 +992,15 @@ const contactMessage = async (name, email, message) => {
  
 </body>
 </html>`,
-    MessageStream: "notifications",
   });
 };
 
 const sendNotificationEmail = async (email, subject, htmlBody) => {
-  await client.sendEmail({
+  await sendEmail({
     From: process.env.EMAILUSER,
     To: email,
     Subject: subject,
     HtmlBody: htmlBody,
-    MessageStream: "notifications",
   });
 };
 

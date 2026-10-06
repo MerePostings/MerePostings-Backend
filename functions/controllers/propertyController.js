@@ -5,6 +5,20 @@ const stripeService = require("../services/stripeService");
 const AppError = require("../utils/AppError");
 const Busboy = require("busboy");
 const {ADDONS} = require("../data/addons");
+const {buildPropertySchemaResponse, getPropertySchemaVersion, getPropertySchemaEtag} =
+  require("../utils/buildPropertySchemaResponse");
+
+const SCHEMA_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
+const SCHEMA_VERSION_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
+
+function sendCachedJson(req, res, cacheControl, etag, body) {
+  res.set("ETag", etag);
+  res.set("Cache-Control", cacheControl);
+  if (req.headers["if-none-match"] === etag) {
+    return res.status(304).end();
+  }
+  return res.status(200).json(body);
+}
 
 const propertyController = {
 
@@ -124,6 +138,7 @@ const propertyController = {
 
   stripeCheckoutSessionForCreateListing: asyncErrorHandler( async (req, res) => {
     const {listingId} = req.params;
+    await propertyService.assertListingComplete(req.user.uid, listingId);
     const selectedAddons = await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
     const clientSecret = await stripeService.stripeCheckoutSessionForCreateListing(listingId, req.user.uid, selectedAddons);
     res.status(200).json({clientSecret});
@@ -149,6 +164,20 @@ const propertyController = {
 
   getAddons: asyncErrorHandler(async (req, res) => {
     res.status(200).json(ADDONS);
+  }),
+
+  getPropertySchema: asyncErrorHandler(async (req, res) => {
+    sendCachedJson(req, res, SCHEMA_CACHE_CONTROL, getPropertySchemaEtag(), buildPropertySchemaResponse());
+  }),
+
+  getPropertySchemaVersion: asyncErrorHandler(async (req, res) => {
+    sendCachedJson(
+        req,
+        res,
+        SCHEMA_VERSION_CACHE_CONTROL,
+        getPropertySchemaEtag(),
+        {version: getPropertySchemaVersion()},
+    );
   }),
 
   getListingProcess: asyncErrorHandler(async (req, res) => {

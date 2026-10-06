@@ -15,4 +15,9 @@ describe("AppError", () => {
     expect(err).toBeInstanceOf(Error);
     expect(err.stack).toBeDefined();
   });
+
+  test("carries optional structured details, and omits the key when none are given", () => {
+    expect(new AppError("Missing fields", 422, {missingFields: []}).details).toEqual({missingFields: []});
+    expect(new AppError("Listing not found", 404)).not.toHaveProperty("details");
+  });
 });

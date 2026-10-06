@@ -3,6 +3,7 @@ const adminService = require("../services/adminService");
 const actionService = require("../services/actionService");
 const propertyService = require("../services/propertyService");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
+const {ADDONS} = require("../data/addons");
 
 const adminController = {
   handleAdminLogin: asyncErrorHandler( async (req, res) => {
@@ -34,6 +35,15 @@ const adminController = {
   getListingById: asyncErrorHandler(async (req, res) => {
     const result = await adminService.getListingById(req.params.listingId);
     res.status(200).json(result);
+  }),
+
+  getListingCompleteness: asyncErrorHandler(async (req, res) => {
+    const result = await adminService.getListingCompleteness(req.params.listingId);
+    res.status(200).json(result);
+  }),
+
+  getAddons: asyncErrorHandler(async (req, res) => {
+    res.status(200).json(ADDONS);
   }),
 
   updateListing: asyncErrorHandler(async (req, res) => {

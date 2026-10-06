@@ -48,8 +48,24 @@ const createContactIfNotExists = async (properties) => {
     return existingContact.id;
   }
 
-  const response = await hubspotClient.crm.contacts.basicApi.create({properties});
-  return response.id;
+  try {
+    const response = await hubspotClient.crm.contacts.basicApi.create({properties});
+    return response.id;
+  } catch (error) {
+    const rejectedAffiliation = error?.code === 400 &&
+      properties.platform_affiliation &&
+      JSON.stringify(error.body || "").includes("INVALID_OPTION");
+    if (!rejectedAffiliation) throw error;
+
+    logger.error(
+        "HubSpot rejected platform_affiliation; creating contact without it",
+        error,
+    );
+    const rest = {...properties};
+    delete rest.platform_affiliation;
+    const response = await hubspotClient.crm.contacts.basicApi.create({properties: rest});
+    return response.id;
+  }
 };
 
 module.exports= {createContactIfNotExists};

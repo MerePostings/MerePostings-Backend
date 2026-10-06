@@ -6,6 +6,7 @@ const verifyAdminFirebaseToken = require("../middlewares/verifyAdminFirebaseToke
 const validate = require("../middlewares/validate");
 const createRateLimiter = require("../middlewares/rateLimiter");
 const {adminCounterTimeSchema, adminFinalizeTimeSchema} = require("../validators/action/schemas.js");
+const {adminListingPatchSchema} = require("../validators/admin/listingPatch");
 
 const adminLoginRateLimiter = createRateLimiter({
   max: 5,
@@ -20,9 +21,11 @@ router.get("/download-zip/:listingId", adminController.downloadPropertyZip);
 router.get("/dashboard-stats", adminController.getDashboardStats);
 router.get("/users", adminController.getUsers);
 router.get("/transactions", adminController.getTransactions);
+router.get("/addons", adminController.getAddons);
 router.get("/listings", adminController.getListings);
 router.get("/listings/:listingId", adminController.getListingById);
-router.patch("/listings/:listingId", adminController.updateListing);
+router.get("/listings/:listingId/completeness", adminController.getListingCompleteness);
+router.patch("/listings/:listingId", validate(adminListingPatchSchema), adminController.updateListing);
 router.patch("/listings/:listingId/status", adminController.updateListingStatus);
 router.get("/listings/:listingId/progress-tracker", adminController.getProgressTracker);
 router.patch("/listings/:listingId/progress-tracker", adminController.updateProgressStep);

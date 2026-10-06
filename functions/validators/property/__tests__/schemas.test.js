@@ -10,67 +10,67 @@ describe("initiatePropertySchema", () => {
   test.each(["owner_occupied", "tenant_occupied", "vacant"])(
       "accepts occupancyType %s",
       (occupancyType) => {
-        const {error} = initiatePropertySchema.validate({occupancyType});
-        expect(error).toBeUndefined();
+        expect(initiatePropertySchema.safeParse({occupancyType}).success).toBe(true);
       },
   );
 
   test("occupancyType is optional", () => {
-    const {error} = initiatePropertySchema.validate({});
-    expect(error).toBeUndefined();
+    expect(initiatePropertySchema.safeParse({}).success).toBe(true);
   });
 
   test("rejects an unknown occupancyType", () => {
-    const {error} = initiatePropertySchema.validate({occupancyType: "bogus"});
-    expect(error).toBeDefined();
+    expect(initiatePropertySchema.safeParse({occupancyType: "bogus"}).success).toBe(false);
   });
 });
 
 describe("draftFieldEnvelopeSchema", () => {
   test("accepts a real propertyType with fieldName/fieldValue", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
+    expect(draftFieldEnvelopeSchema.safeParse({
       propertyType: "detached",
-      fieldName: "bedrooms",
+      fieldName: "bedroomsAboveGrade",
       fieldValue: 3,
-    });
-    expect(error).toBeUndefined();
+    }).success).toBe(true);
   });
 
   test("rejects an unknown propertyType", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
+    expect(draftFieldEnvelopeSchema.safeParse({
       propertyType: "not-a-real-type",
-      fieldName: "bedrooms",
+      fieldName: "bedroomsAboveGrade",
       fieldValue: 3,
-    });
-    expect(error).toBeDefined();
+    }).success).toBe(false);
   });
 
   test("requires fieldName", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
+    expect(draftFieldEnvelopeSchema.safeParse({
       propertyType: "detached",
       fieldValue: 3,
-    });
-    expect(error).toBeDefined();
+    }).success).toBe(false);
+  });
+
+  test("rejects an empty-string fieldName (Joi.string().required() rejects \"\" by default)", () => {
+    expect(draftFieldEnvelopeSchema.safeParse({
+      propertyType: "detached",
+      fieldName: "",
+      fieldValue: 3,
+    }).success).toBe(false);
   });
 
   test.each([0, false, ""])(
-      "accepts falsy-but-present fieldValue %p (Joi.any().required() only rejects undefined)",
+      "accepts falsy-but-present fieldValue %p (fieldValue only rejects undefined)",
       (fieldValue) => {
-        const {error} = draftFieldEnvelopeSchema.validate({
+        expect(draftFieldEnvelopeSchema.safeParse({
           propertyType: "detached",
-          fieldName: "bedrooms",
+          fieldName: "bedroomsAboveGrade",
           fieldValue,
-        });
-        expect(error).toBeUndefined();
+        }).success).toBe(true);
       },
   );
 
   test("rejects a missing fieldValue", () => {
-    const {error} = draftFieldEnvelopeSchema.validate({
+    expect(draftFieldEnvelopeSchema.safeParse({
       propertyType: "detached",
-      fieldName: "bedrooms",
-    });
-    expect(error).toBeDefined();
+      fieldName: "bedroomsAboveGrade",
+    }).success).toBe(false);
   });
 });
 
@@ -78,53 +78,46 @@ describe("selectedAddonsSchema", () => {
   const validAddonIds = Object.keys(ADDONS_BY_ID);
 
   test("accepts a real addon id", () => {
-    const {error} = selectedAddonsSchema.validate({
+    expect(selectedAddonsSchema.safeParse({
       selectedAddons: [validAddonIds[0]],
-    });
-    expect(error).toBeUndefined();
+    }).success).toBe(true);
   });
 
   test("defaults to an empty array when omitted", () => {
-    const {value, error} = selectedAddonsSchema.validate({});
-    expect(error).toBeUndefined();
-    expect(value.selectedAddons).toEqual([]);
+    const result = selectedAddonsSchema.safeParse({});
+    expect(result.success).toBe(true);
+    expect(result.data.selectedAddons).toEqual([]);
   });
 
   test("rejects an unknown addon id", () => {
-    const {error} = selectedAddonsSchema.validate({
+    expect(selectedAddonsSchema.safeParse({
       selectedAddons: ["not_a_real_addon"],
-    });
-    expect(error).toBeDefined();
+    }).success).toBe(false);
   });
 
   test("rejects duplicate addon ids", () => {
-    const {error} = selectedAddonsSchema.validate({
+    expect(selectedAddonsSchema.safeParse({
       selectedAddons: [validAddonIds[0], validAddonIds[0]],
-    });
-    expect(error).toBeDefined();
+    }).success).toBe(false);
   });
 });
 
 describe("listingProcessPatchSchema", () => {
   test("accepts state alone", () => {
-    const {error} = listingProcessPatchSchema.validate({state: {anything: "goes"}});
-    expect(error).toBeUndefined();
+    expect(listingProcessPatchSchema.safeParse({state: {anything: "goes"}}).success).toBe(true);
   });
 
   test("accepts state with furthestMajorIndex inside", () => {
-    const {error} = listingProcessPatchSchema.validate({
+    expect(listingProcessPatchSchema.safeParse({
       state: {furthestMajorIndex: 2, occupancy: "owner"},
-    });
-    expect(error).toBeUndefined();
+    }).success).toBe(true);
   });
 
   test("rejects payload without state", () => {
-    const {error} = listingProcessPatchSchema.validate({});
-    expect(error).toBeDefined();
+    expect(listingProcessPatchSchema.safeParse({}).success).toBe(false);
   });
 
   test("rejects non-object state", () => {
-    const {error} = listingProcessPatchSchema.validate({state: "nope"});
-    expect(error).toBeDefined();
+    expect(listingProcessPatchSchema.safeParse({state: "nope"}).success).toBe(false);
   });
 });

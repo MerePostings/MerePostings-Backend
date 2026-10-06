@@ -3,6 +3,8 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const app = express();
 
+app.set("trust proxy", 1);
+
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const propertyRoutes = require("./routes/propertyRoutes");
@@ -21,6 +23,7 @@ app.use(
         `${process.env.FRONTEND_URL}`,
         "https://mere-postings-admin-staging.web.app",
         "https://mere-posting-staging.web.app",
+        "https://merepostings.com",
       ],
       exposedHeaders: ["X-Zip-Filename"],
       credentials: true,

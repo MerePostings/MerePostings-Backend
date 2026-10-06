@@ -3,20 +3,35 @@
  * Keeps MLS/domain fields on `properties`; funnel UX stays only on listingProcesses.
  */
 
+const {propertyTypeFields} = require("../validators/property/fieldRegistry");
+const {propertyTypeCatalog} = require("../data/propertyTypeCatalog");
+
 const OCCUPANCY = {
   owner: "owner_occupied",
   tenant: "tenant_occupied",
   vacant: "vacant",
 };
 
-const PROPERTY_TYPE = {
-  "detached": "detached",
-  "semi-detached": "semiDetached",
-  "condo-apartment": "condoApartment",
-  "condo-townhouse": "condoTownhouse",
-  "rural": "rural",
-  "duplex-triplex": "duplex",
+const TENANCY_POSSESSION = {
+  "fixed-term": "fixed_term",
+  "month-to-month": "month_to_month",
+  "vacant-possession": "vacant_possession_on_closing",
 };
+
+// FE slug (current or legacy) -> registry key, derived from the catalog so
+// adding/renaming a tile there is the only change needed.
+const PROPERTY_TYPE = Object.fromEntries(propertyTypeCatalog.flatMap(({value, slug, legacySlugs = []}) =>
+  [slug, ...legacySlugs].map((s) => [s, value])));
+
+/**
+ * properties/{id}.propertyType holds whatever the FE last sent: the raw FE
+ * slug via the listing-process save, or the backend key via draft-field.
+ * @param {string} propertyType
+ * @return {string} backend registry key
+ */
+function toBackendPropertyType(propertyType) {
+  return PROPERTY_TYPE[propertyType] || propertyType;
+}
 
 const CONTACT_METHOD = {
   "Email": "email",
@@ -147,6 +162,17 @@ function projectStateToProperty(state) {
   if (state.occupancy && OCCUPANCY[state.occupancy]) {
     patch.occupancyType = OCCUPANCY[state.occupancy];
     patch["occupancy.occupancyStatus"] = OCCUPANCY[state.occupancy];
+  }
+
+  const t = state.tenancy || {};
+  if (t.possession && TENANCY_POSSESSION[t.possession]) {
+    patch["occupancy.tenancyPossession"] = TENANCY_POSSESSION[t.possession];
+  }
+  if (typeof t.fixedTermUntil === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.fixedTermUntil.trim())) {
+    patch["occupancy.fixedTermUntil"] = t.fixedTermUntil.trim();
+  }
+  if (typeof t.leaseAgreementAvailable === "boolean") {
+    patch["occupancy.leaseAgreementAvailable"] = t.leaseAgreementAvailable;
   }
 
   if (typeof state.askingPrice === "number" && state.askingPrice > 0) {
@@ -300,7 +326,20 @@ function projectStateToProperty(state) {
   }
   if (state.saleType) patch.saleType = state.saleType;
 
+  const fieldsForType = beType && propertyTypeFields[beType];
+  if (fieldsForType) {
+    const pathsForType = new Set(Object.values(fieldsForType).map((def) => def.path));
+    for (const path of pathsForType) {
+      const value = state[path];
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      for (const [dbKey, fieldValue] of Object.entries(value)) {
+        if (fieldValue === undefined) continue;
+        patch[`${path}.${dbKey}`] = fieldValue;
+      }
+    }
+  }
+
   return patch;
 }
 
-module.exports = {projectStateToProperty, PROPERTY_TYPE, OCCUPANCY};
+module.exports = {projectStateToProperty, toBackendPropertyType, PROPERTY_TYPE, OCCUPANCY};
