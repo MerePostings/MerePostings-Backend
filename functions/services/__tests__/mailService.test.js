@@ -1,4 +1,5 @@
 const mockSendEmail = jest.fn();
+const mockRecordContactInquiry = jest.fn();
 
 jest.mock("postmark", () => ({
   ServerClient: jest.fn(() => ({sendEmail: mockSendEmail})),
@@ -6,7 +7,9 @@ jest.mock("postmark", () => ({
 jest.mock("firebase-functions/logger", () => ({error: jest.fn()}));
 // The real module loads .env on require, which would re-set
 // POSTMARK_MESSAGE_STREAM inside isolateModules.
-jest.mock("../../config/hubspotSDK", () => ({createContactIfNotExists: jest.fn()}));
+jest.mock("../../config/hubspotSDK", () => ({
+  recordContactInquiry: (...args) => mockRecordContactInquiry(...args),
+}));
 
 const logger = require("firebase-functions/logger");
 
@@ -23,6 +26,8 @@ describe("mailService", () => {
 
   beforeEach(() => {
     mockSendEmail.mockReset();
+    mockRecordContactInquiry.mockReset();
+    mockRecordContactInquiry.mockResolvedValue("1");
     delete process.env.POSTMARK_MESSAGE_STREAM;
   });
 
@@ -45,13 +50,50 @@ describe("mailService", () => {
   it("uses POSTMARK_MESSAGE_STREAM when set", async () => {
     process.env.POSTMARK_MESSAGE_STREAM = "custom-stream";
     mockSendEmail.mockResolvedValue({});
-    const {contactMessage} = loadMailService();
+    const {sendNotificationEmail} = loadMailService();
 
-    await contactMessage("Name", "a@b.com", "hello");
+    await sendNotificationEmail("a@b.com", "Hi", "<p>x</p>");
 
     expect(mockSendEmail).toHaveBeenCalledWith(
         expect.objectContaining({MessageStream: "custom-stream"}),
     );
+  });
+
+  it("puts callback topic, time, phone, and notes in the email and HubSpot note", async () => {
+    mockSendEmail.mockResolvedValue({});
+    const {callbackRequest} = loadMailService();
+
+    await callbackRequest({
+      name: "Jane Smith",
+      email: "jane@example.com",
+      phone: "416-555-0123",
+      time: "This afternoon",
+      topic: "My listing",
+      notes: "MLS A1234567",
+    });
+
+    const html = mockSendEmail.mock.calls[0][0].HtmlBody;
+    expect(html).toContain("Jane Smith");
+    expect(html).toContain("jane@example.com");
+    expect(html).toContain("416-555-0123");
+    expect(html).toContain("This afternoon");
+    expect(html).toContain("My listing");
+    expect(html).toContain("MLS A1234567");
+    expect(html).not.toMatch(/undefined/i);
+    expect(html).not.toContain("[object Object]");
+
+    expect(mockRecordContactInquiry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: "jane@example.com",
+          phone: "416-555-0123",
+          noteBody: expect.stringContaining("Inquiry: callback"),
+        }),
+    );
+    const noteBody = mockRecordContactInquiry.mock.calls[0][0].noteBody;
+    expect(noteBody).toContain("Topic: My listing");
+    expect(noteBody).toContain("Best time: This afternoon");
+    expect(noteBody).toContain("Phone: 416-555-0123");
+    expect(noteBody).toContain("Notes: MLS A1234567");
   });
 
   it("logs instead of rejecting when a best-effort send fails", async () => {

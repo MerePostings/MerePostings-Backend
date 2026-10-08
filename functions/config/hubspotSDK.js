@@ -18,6 +18,15 @@ const isRejectedAffiliation = (error, properties) =>
   properties.platform_affiliation &&
   JSON.stringify(error.body || "").includes("INVALID_OPTION");
 
+const existingIdFromConflict = (error) => {
+  if (error?.code !== 409) return null;
+  const text = typeof error.body === "string" ?
+    error.body :
+    JSON.stringify(error.body || error.message || "");
+  const match = text.match(/Existing ID:\s*(\d+)/i);
+  return match ? match[1] : null;
+};
+
 
 const findContactByEmail = async (email) => {
   try {
@@ -60,6 +69,11 @@ const writeContact = async (existingId, properties) => {
     const response = await hubspotClient.crm.contacts.basicApi.create({properties});
     return response.id;
   } catch (error) {
+    const conflictId = !existingId && existingIdFromConflict(error);
+    if (conflictId) {
+      logger.info("HubSpot contact already exists; updating", conflictId);
+      return writeContact(conflictId, properties);
+    }
     if (!isRejectedAffiliation(error, properties)) throw error;
 
     logger.error(
@@ -68,14 +82,7 @@ const writeContact = async (existingId, properties) => {
     );
     const rest = {...properties};
     delete rest.platform_affiliation;
-    if (existingId) {
-      const updateRest = {...rest};
-      delete updateRest.email;
-      await hubspotClient.crm.contacts.basicApi.update(existingId, {properties: updateRest});
-      return existingId;
-    }
-    const response = await hubspotClient.crm.contacts.basicApi.create({properties: rest});
-    return response.id;
+    return writeContact(existingId, rest);
   }
 };
 
