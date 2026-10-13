@@ -61,7 +61,7 @@ const propertyTypeCatalog = [
     slug: "semi-detached",
     label: "Semi-Detached",
     displayName: "Semi-Detached Home",
-    icon: "house",
+    icon: "house-plus",
     detailsPage: {
       layout: "standard",
       accent: "orange",
@@ -112,7 +112,7 @@ const propertyTypeCatalog = [
     slug: "condo-townhouse",
     label: "Condo Townhouse",
     displayName: "Condo Townhouse",
-    icon: "building-2",
+    icon: "building",
     detailsPage: {
       layout: "standard",
       accent: "orange",
