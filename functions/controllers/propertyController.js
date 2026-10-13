@@ -144,6 +144,15 @@ const propertyController = {
     res.status(200).json({clientSecret});
   }),
 
+  submitComplimentaryListing: asyncErrorHandler(async (req, res) => {
+    const {listingId} = req.params;
+    await propertyService.assertListingComplete(req.user.uid, listingId);
+    await propertyService.saveSelectedAddons(req.user.uid, listingId, req.body.selectedAddons);
+    await propertyService.submitComplimentary(req.user.uid, listingId);
+    await stripeService.addTransaction(null, 0, null, "complimentary", "processed", "complimentary", 1, listingId);
+    res.status(200).json({status: "submitted"});
+  }),
+
   requestRefund: asyncErrorHandler( async (req, res)=> {
     await stripeService.requestRefund(req.params.listingId, req.user.uid);
     res.status(200).json({});

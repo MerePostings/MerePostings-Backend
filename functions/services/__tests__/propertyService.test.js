@@ -825,3 +825,60 @@ describe("propertyService.getProgressTracker", () => {
     expect(result.steps.find((s) => s.id === "mls_entry_completion").completed).toBe(false);
   });
 });
+
+describe("propertyService.submitComplimentary", () => {
+  let markSubmitted;
+
+  beforeEach(() => {
+    resetDbMock();
+    markSubmitted = jest.spyOn(propertyService, "markSubmitted").mockResolvedValue(undefined);
+  });
+
+  const asAdmin = (ifAdmin) => dbRefs.docRef.get.mockResolvedValueOnce({data: () => ({ifAdmin})});
+  const listing = (data) => dbRefs.tx.get.mockResolvedValueOnce({exists: true, data: () => data});
+
+  test("admin: claims the draft as a paid complimentary submission, then runs markSubmitted", async () => {
+    asAdmin(true);
+    listing({ownerId: "user-1", status: "draft"});
+
+    await propertyService.submitComplimentary("user-1", "listing-1");
+
+    expect(dbRefs.tx.update).toHaveBeenCalledWith(
+        dbRefs.docRef,
+        expect.objectContaining({status: "submitted", paid: true, complimentary: true}),
+    );
+    expect(markSubmitted).toHaveBeenCalledWith("listing-1");
+  });
+
+  test.each([false, undefined, "true"])("403s when ifAdmin is %p, before reading the listing", async (ifAdmin) => {
+    asAdmin(ifAdmin);
+
+    await expect(propertyService.submitComplimentary("user-1", "listing-1")).rejects.toMatchObject({statusCode: 403});
+    expect(dbRefs.tx.get).not.toHaveBeenCalled();
+    expect(markSubmitted).not.toHaveBeenCalled();
+  });
+
+  test("403s for someone else's listing", async () => {
+    asAdmin(true);
+    listing({ownerId: "someone-else", status: "draft"});
+
+    await expect(propertyService.submitComplimentary("user-1", "listing-1")).rejects.toMatchObject({statusCode: 403});
+    expect(dbRefs.tx.update).not.toHaveBeenCalled();
+  });
+
+  test.each(["submitted", "active", "refunded"])("409s when the listing is already %s (double submit)", async (status) => {
+    asAdmin(true);
+    listing({ownerId: "user-1", status});
+
+    await expect(propertyService.submitComplimentary("user-1", "listing-1")).rejects.toMatchObject({statusCode: 409});
+    expect(dbRefs.tx.update).not.toHaveBeenCalled();
+    expect(markSubmitted).not.toHaveBeenCalled();
+  });
+
+  test("404s when the listing doesn't exist", async () => {
+    asAdmin(true);
+    dbRefs.tx.get.mockResolvedValueOnce({exists: false});
+
+    await expect(propertyService.submitComplimentary("user-1", "listing-1")).rejects.toMatchObject({statusCode: 404});
+  });
+});

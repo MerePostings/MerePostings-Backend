@@ -68,6 +68,19 @@ describe("stripeService.requestRefund", () => {
     });
   });
 
+  test("400s for a complimentary (team) listing, without touching Stripe", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "submitted", paid: true, complimentary: true}),
+    });
+
+    await expect(stripeService.requestRefund("listing-1", "user-1")).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("Complimentary"),
+    });
+    expect(dbRefs.queryRef.get).not.toHaveBeenCalled();
+  });
+
   test("refund amount is computed as amountPaid - ADMIN_FEE_CENTS, guard blocks Stripe call when <= 0", async () => {
     dbRefs.docRef.get.mockResolvedValueOnce({
       exists: true,

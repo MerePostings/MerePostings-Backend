@@ -1038,6 +1038,41 @@ const propertyService = {
 
     return selectedAddons;
   },
+
+  /**
+     * Submits a listing without payment for team members (`users/{uid}.ifAdmin`).
+     * - The admin check reads Firestore, never the client, so the FE flag is display-only
+     * - A transaction claims the draft (initiated/draft → submitted) so a double
+     *   click can't submit twice
+     * - markSubmitted then does the same post-payment work the Stripe webhook does
+     */
+  submitComplimentary: async (userId, listingId) => {
+    const userSnap = await db.collection("users").doc(userId).get();
+    if (userSnap.data()?.ifAdmin !== true) {
+      throw new AppError("Complimentary listings are only available to team members", 403);
+    }
+
+    const docRef = db.collection("properties").doc(listingId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(docRef);
+      if (!snap.exists) throw new AppError("Property not found", 404);
+
+      const listing = snap.data();
+      if (listing.ownerId !== userId) throw new AppError("Unauthorized access to this property", 403);
+      if (!["initiated", "draft"].includes(listing.status)) {
+        throw new AppError("This listing has already been submitted", 409);
+      }
+
+      tx.update(docRef, {
+        status: "submitted",
+        paid: true,
+        complimentary: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    await propertyService.markSubmitted(listingId);
+  },
 };
 
 module.exports = propertyService;

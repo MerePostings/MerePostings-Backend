@@ -3,9 +3,9 @@ const logger = require("firebase-functions/logger");
 const {recordContactInquiry} = require("../config/hubspotSDK");
 const AppError = require("../utils/AppError");
 
-// Built on first send rather than at load: POSTMARK_SERVER_TOKEN is a Secret
-// Manager secret, which isn't set when the Firebase CLI loads this code to
-// discover functions at deploy time, and ServerClient throws without a token.
+// Built on first send rather than at load: ServerClient throws without a
+// token, so a missing POSTMARK_SERVER_TOKEN fails only the send, not every
+// request (or the Firebase CLI's function discovery at deploy time).
 let client;
 const getClient = () => {
   client ??= new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);

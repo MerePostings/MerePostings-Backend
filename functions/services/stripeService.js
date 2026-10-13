@@ -139,6 +139,10 @@ const stripeService = {
         throw new AppError("This listing has not been paid for", 400);
       }
 
+      if (listing.complimentary) {
+        throw new AppError("Complimentary listings can't be refunded", 400);
+      }
+
       const snapshot = await db
           .collection("transactions")
           .where("listingId", "==", listingId)
