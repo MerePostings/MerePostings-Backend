@@ -9,9 +9,14 @@ const authController = {
   }),
 
   resendVerification: asyncErrorHandler(async (req, res) => {
-    await authService.resendVerificationEmail(req.user.uid);
+    const result = await authService.resendVerificationEmail(req.user.uid);
 
-    res.status(200).json({msg: "Verification email sent."});
+    res.status(200).json({
+      ...result,
+      msg: result.status === "already_verified" ?
+        "Your email address is already verified." :
+        "Verification email sent.",
+    });
   }),
 
 };

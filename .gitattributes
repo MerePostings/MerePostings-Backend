@@ -1,0 +1,3 @@
+# Keep LF in the working tree on Windows too: ESLint (google config) enforces
+# linebreak-style LF, and the repository already stores LF.
+* text=auto eol=lf

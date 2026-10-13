@@ -5,6 +5,46 @@ const AppError = require("../utils/AppError");
 const {sendVerificationEmail} = require("./mailService");
 const {createContactIfNotExists} = require("../config/hubspotSDK");
 const {FieldValue} = require("firebase-admin/firestore");
+const {toSiteActionLink} = require("../utils/authActionLink");
+
+const VERIFICATION_EMAIL_COOLDOWN_MS = 60 * 1000;
+
+const firstNameOf = (userRecord) => userRecord.displayName?.split(" ")[0];
+
+/** Generates a verification link on our own /email-verified page and emails it. */
+async function emailVerificationLink(email, firstName) {
+  const firebaseLink = await firebaseAdmin.auth().generateEmailVerificationLink(email);
+  await sendVerificationEmail(email, toSiteActionLink(firebaseLink), firstName);
+}
+
+/**
+ * Reserves this user's next verification email, or 429s if one went out less
+ * than VERIFICATION_EMAIL_COOLDOWN_MS ago. Done in a transaction so two
+ * concurrent resends can't both pass. Returns the previous send time so a
+ * failed send can hand the slot back.
+ */
+async function claimVerificationEmailSlot(userRef) {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(userRef);
+    const lastSentAt = snap.exists ? snap.data().lastVerificationEmailAt : undefined;
+    const elapsed = lastSentAt ? Date.now() - lastSentAt.toMillis() : Infinity;
+
+    if (elapsed < VERIFICATION_EMAIL_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.ceil((VERIFICATION_EMAIL_COOLDOWN_MS - elapsed) / 1000);
+      throw new AppError(
+          `Please wait ${retryAfterSeconds} seconds before requesting another email.`,
+          429,
+          {code: "VERIFICATION_EMAIL_COOLDOWN", retryAfterSeconds},
+      );
+    }
+
+    tx.set(userRef, {
+      lastVerificationEmailAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+    return lastSentAt;
+  });
+}
 
 const authService = {
 
@@ -81,16 +121,14 @@ const authService = {
 
       createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});
 
-      const actionCodeSettings = {
-        url: process.env.FRONTEND_URL,
-        handleCodeInApp: true,
-      };
-
-      const emailVerificationLink = await firebaseAdmin
-          .auth()
-          .generateEmailVerificationLink(email, actionCodeSettings);
-
-      await sendVerificationEmail(email, emailVerificationLink, firstName);
+      // The account exists at this point, so a failed email mustn't fail the
+      // sign-up: the user can resend from the verify-email screen.
+      try {
+        await emailVerificationLink(email, firstName);
+        await usersCollectionRef.update({lastVerificationEmailAt: FieldValue.serverTimestamp()});
+      } catch (mailError) {
+        logger.error("[auth] Sign-up verification email failed", {uid: userRecord.uid, message: mailError.message});
+      }
     } catch (err) {
       logger.error(err);
       try {
@@ -118,24 +156,30 @@ const authService = {
      * email" gate screen. Uses req.user.uid (from verifyFirebaseToken) rather
      * than trusting a client-supplied email, so a signed-in user can only
      * ever resend to their own address.
+     *
+     * @return {Promise<{status: "sent", retryAfterSeconds: number} | {status: "already_verified"}>}
      */
   resendVerificationEmail: async (uid) => {
     const userRecord = await firebaseAdmin.auth().getUser(uid);
 
-    if (userRecord.emailVerified) {
-      throw new AppError("This email address is already verified.", 400);
+    if (userRecord.emailVerified) return {status: "already_verified"};
+    if (!userRecord.email) throw new AppError("Your account has no email address.", 400);
+
+    const userRef = db.collection("users").doc(uid);
+    const previousSentAt = await claimVerificationEmailSlot(userRef);
+
+    try {
+      await emailVerificationLink(userRecord.email, firstNameOf(userRecord));
+    } catch (err) {
+      // Nothing was sent, so don't make the user wait out the cooldown.
+      await userRef.update({lastVerificationEmailAt: previousSentAt ?? FieldValue.delete()})
+          .catch((restoreError) => logger.error("[auth] Couldn't release verification cooldown", restoreError));
+      if (err instanceof AppError) throw err;
+      logger.error("[auth] Couldn't generate verification link", {uid, code: err.code, message: err.message});
+      throw new AppError("We couldn't send the email right now. Please try again in a few minutes.", 502);
     }
 
-    const actionCodeSettings = {
-      url: process.env.FRONTEND_URL,
-      handleCodeInApp: true,
-    };
-
-    const emailVerificationLink = await firebaseAdmin
-        .auth()
-        .generateEmailVerificationLink(userRecord.email, actionCodeSettings);
-
-    await sendVerificationEmail(userRecord.email, emailVerificationLink, userRecord.displayName?.split(" ")[0] || "there");
+    return {status: "sent", retryAfterSeconds: VERIFICATION_EMAIL_COOLDOWN_MS / 1000};
   },
 
 };

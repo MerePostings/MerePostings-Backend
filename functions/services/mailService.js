@@ -1,13 +1,23 @@
 const postmark = require("postmark");
 const logger = require("firebase-functions/logger");
 const {recordContactInquiry} = require("../config/hubspotSDK");
+const AppError = require("../utils/AppError");
 
-const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
+// Built on first send rather than at load: POSTMARK_SERVER_TOKEN is a Secret
+// Manager secret, which isn't set when the Firebase CLI loads this code to
+// discover functions at deploy time, and ServerClient throws without a token.
+let client;
+const getClient = () => {
+  client ??= new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
+  return client;
+};
 
 const MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
 
+const VERIFICATION_SENDER = "Smart Hub <noreply@merepostings.com>";
+
 const sendEmail = (message) =>
-  client.sendEmail({...message, MessageStream: MESSAGE_STREAM});
+  getClient().sendEmail({...message, MessageStream: MESSAGE_STREAM});
 
 const sendEmailSafely = (message) =>
   sendEmail(message).catch((err) => {
@@ -54,265 +64,108 @@ const recordInquirySafely = async (payload) => {
   }
 };
 
-const sendVerificationEmail = async (
-    email,
-    emailVerificationLink,
-    firstName,
-) => {
-  return sendEmailSafely({
-    from: `${process.env.EMAILUSER}`,
-    to: `${email}`,
-    Subject: "Verify your email address",
-    HtmlBody: `
-      <!doctype html>
-      <html lang="und" dir="auto" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
-          <head>
-          <title></title>
-          <meta http-equiv="X-UA-Compatible" content="IE=edge">
-          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
+// Postmark API error codes that mean "this recipient", not "try again later".
+// https://postmarkapp.com/developer/api/overview#error-codes
+const RECIPIENT_ERROR_MESSAGES = {
+  300: "That email address can't receive mail. Please contact support if it's correct.",
+  406: "We can't email this address because earlier messages bounced or were marked as spam. Please contact support.",
+};
 
-          <link href="https://fonts.googleapis.com/css?family=Playfair+Display:400,500,600,700" rel="stylesheet" type="text/css">
-          <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,500,700" rel="stylesheet" type="text/css">
+const toMailAppError = (err) => {
+  const recipientMessage = RECIPIENT_ERROR_MESSAGES[err.code];
+  if (recipientMessage) return new AppError(recipientMessage, 422);
+  return new AppError("We couldn't send the email right now. Please try again in a few minutes.", 502);
+};
 
-          <style type="text/css">
-              #outlook a {
-                  padding: 0;
-              }
+/**
+ * Sends the account verification email. Unlike the best-effort mails, this
+ * rejects with a user-facing AppError so the caller can report the failure;
+ * Postmark's own code/message are logged (e.g. 400/401 sender signature not
+ * found/confirmed, 406 inactive recipient, 10 bad server token).
+ */
+const sendVerificationEmail = async (email, verificationLink, firstName) => {
+  const name = firstName || "there";
+  const link = escapeHtml(verificationLink);
 
-              body {
-                  margin: 0;
-                  padding: 0;
-                  -webkit-text-size-adjust: 100%;
-                  -ms-text-size-adjust: 100%;
-              }
-
-              table,
-              td {
-                  border-collapse: collapse;
-                  width: 100%;
-              }
-
-              img {
-                  border: 0;
-                  height: auto;
-                  line-height: 100%;
-                  width: 120px !important;
-                  object-fit: contain;
-                  height: 120px !important;
-                  outline: none;
-                  text-decoration: none;
-                  -ms-interpolation-mode: bicubic;
-              }
-
-              p {
-                  display: block;
-                  margin: 13px 0;
-              }
-
-              .hp-nav__logo {
-                  font-family: 'Playfair Display', serif;
-                  font-size: 35px;
-                  font-weight: 600;
-                  color: #ffffff;
-                  letter-spacing: 0.02em;
-                  text-decoration: none !important;
-              }
-
-              .hp-nav__logo span {
-                  color: #154360;
-              }
-
-              .logo {
-                  font-size: large;
-                  text-decoration: none;
-              }
-          </style>
-
-          <!-- Fixed broken @import -->
-          <style type="text/css">
-              @import ur[](https://fonts.googleapis.com/css?family=Open+Sans:300,400,500,700);
-          </style>
-
-          <style type="text/css">
-              @media only screen and (min-width:480px) {
-                  .mj-column-per-100 {
-                      width: 100% !important;
-                      max-width: 100%;
-                  }
-              }
-          </style>
-
-          <style media="screen and (min-width:480px)">
-              .moz-text-html .mj-column-per-100 {
-                  width: 100% !important;
-                  max-width: 100%;
-              }
-          </style>
-
-          <style type="text/css">
-              @media only screen and (max-width:479px) {
-                  table.mj-full-width-mobile {
-                      width: 100% !important;
-                  }
-                  td.mj-full-width-mobile {
-                      width: auto !important;
-                  }
-              }
-          </style>
-          </head>
-
-          <body style="word-spacing:normal;background-color:#F4F4F4;">
-          <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">Welcome to Mere Postings - Your Ultimate Real Estate Listing Spot</div>
-
-          <div style="background-color:#F4F4F4;" lang="und" dir="auto">
-              <div style="background:#7a8c6e;background-color:#7a8c6e;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#7a8c6e;background-color:#7a8c6e;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:20px 0;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                              <tr>
-                              <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
-                                  <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border-spacing:0px;">
-                                  <tbody>
-                                      <tr>
-                                      <td align="center" class="logo" style="padding:0;">
-                                          <a href="${process.env.FRONTEND_URL}" 
-                                            class="hp-nav__logo" 
-                                            style="text-decoration: none !important; color: #ffffff; font-family: 'Playfair Display', serif; font-size: 35px; font-weight: 600; letter-spacing: 0.02em;">
-                                              <span>Mere</span>Postings
-                                          </a>
-                                      </td>
-                                      </tr>
-                                  </tbody>
-                                  </table>
-                              </td>
-                              </tr>
-                          </tbody>
-                          </table>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-            </div>
-
-              <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:30px 20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                              <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                  <div style="font-family: sans-serif;font-size:20px;line-height:1;text-align:center;color:#333333;">Welcome, ${firstName}! to Mere Postings</div>
-                              </td>
-                              </tr>
-                              <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                  <div style="font-family:'Open Sans', sans-serif;font-size:16px;line-height:1;text-align:center;color:#777777;">Your Real Estate Solution!</div>
-                              </td>
-                              </tr>
-                          </tbody>
-                          </table>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-              </div>
-
-              <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:20px 20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                              <tr>
-                                  <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                      <div style="font-family:'Open Sans', sans-serif;font-size:14px;line-height:1;text-align:left;color:#696C72;">It's a pleasure to have you here! In order to activate your account with us, please click the button below.</div>
-                                  </td>
-                              </tr>
-                          </tbody>
-                          </table>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-              </div>
-
-              <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:20px 0;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0;line-height:0;text-align:left;display:inline-block;width:100%;direction:ltr;">
-                          <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                              <tbody>
-                              <tr>
-                                  <td align="center" style="font-size:0px;padding:15px 30px;word-break:break-word;">
-                                  <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;">
-                                      <tbody>
-                                      <tr>
-                                          <td align="center" role="presentation" style="border:none;border-radius:5px;cursor:auto;mso-padding-alt:10px 25px;background:transparent;" valign="middle">
-                                          <a href="${emailVerificationLink}" 
-                                            style="display:inline-block;background:transparent;color:#154360;border:2px solid #154360;font-family:'Open Sans', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:120%;margin:0;text-decoration:none;text-transform:none;padding:10px 30px;border-radius:5px;" 
-                                            target="_blank">Verify My Email</a>
-                                          </td>
-                                      </tr>
-                                      </tbody>
-                                  </table>
-                                  </td>
-                              </tr>
-                              </tbody>
-                          </table>
-                          </div>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-              </div>
-
-              <div style="background:#7a8c6e;background-color:#7a8c6e;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#7a8c6e;background-color:#7a8c6e;width:100%;">
-                  <tbody>
-                  <tr>
-                      <td style="direction:ltr;font-size:0px;padding:20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                            <tbody>
-                                <tr>
-                                <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                    <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">This is an auto-generated email. Please do not reply to this message. For help with any questions about your Mere Postings account, please contact us here.</div>
-                                </td>
-                                </tr>
-                                <tr>
-                                <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                    <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">&copy; 2025 Mere Postings. All rights reserved.</div>
-                                </td>
-                                </tr>
-                            </tbody>
-                          </table>
-                      </div>
-                      </td>
-                  </tr>
-                  </tbody>
-              </table>
-              </div>
-          </div>
-          </body>
-      </html>`,
-  });
+  try {
+    await sendEmail({
+      From: VERIFICATION_SENDER,
+      To: email,
+      Subject: "Confirm your email address",
+      Tag: "email-verification",
+      // Tracking would rewrite the link through Postmark's redirect domain.
+      TrackLinks: "None",
+      TrackOpens: false,
+      TextBody: [
+        `Hi ${name},`,
+        "",
+        "Thanks for signing up with Mere Postings. Confirm your email address to activate your account:",
+        "",
+        verificationLink,
+        "",
+        "If you didn't create a Mere Postings account, you can ignore this email.",
+        "",
+        "Mere Postings",
+      ].join("\n"),
+      HtmlBody: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Confirm your email address</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f4f4;-webkit-text-size-adjust:100%;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f4f4;">Confirm your email to activate your Mere Postings account.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+            <tr>
+              <td align="center" style="background-color:#7a8c6e;padding:22px 24px;">
+                <a href="${escapeHtml(process.env.FRONTEND_URL)}" style="font-family:'Playfair Display',Georgia,serif;font-size:30px;font-weight:600;letter-spacing:0.02em;color:#ffffff;text-decoration:none;"><span style="color:#154360;">Mere</span>Postings</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:36px 40px 8px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#333333;">
+                <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;font-weight:600;color:#1a2e1f;">Confirm your email address</h1>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">Hi ${escapeHtml(name)},</p>
+                <p style="margin:0;font-size:15px;line-height:1.6;">Thanks for signing up with Mere Postings. Click the button below to confirm your email and activate your account.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:28px 40px;">
+                <a href="${link}" target="_blank" style="display:inline-block;background-color:#154360;color:#ffffff;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;line-height:1;text-decoration:none;padding:14px 32px;border-radius:6px;">Verify my email</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 32px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#696c72;font-size:13px;line-height:1.6;">
+                <p style="margin:0 0 8px;">If the button doesn't work, copy this link into your browser:</p>
+                <p style="margin:0 0 20px;word-break:break-all;"><a href="${link}" target="_blank" style="color:#154360;">${link}</a></p>
+                <p style="margin:0;">If you didn't create a Mere Postings account, you can ignore this email.</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background-color:#7a8c6e;padding:18px 24px;font-family:'Open Sans',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#e9e9e9;">
+                This is an automated email. Please don't reply.<br>
+                &copy; ${new Date().getFullYear()} Mere Postings. All rights reserved.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
+    });
+  } catch (err) {
+    logger.error("[mail] Verification email failed", {
+      to: email,
+      code: err.code,
+      statusCode: err.statusCode,
+      message: err.message,
+    });
+    throw toMailAppError(err);
+  }
 };
 
 const sendPaymentConfirmationEmail = async (
@@ -1063,5 +916,4 @@ module.exports = {
   callbackRequest,
   contactMessage,
   sendNotificationEmail,
-  client,
 };
