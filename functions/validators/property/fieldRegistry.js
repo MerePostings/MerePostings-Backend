@@ -1039,6 +1039,7 @@ const saleItemsFields = {
 const listingRemarksSection = {
   id: "listing-remarks",
   title: "Help Us Prepare Your Listing Remarks",
+  subtitle: "Tell us what you want buyers to notice. We'll use it to prepare your listing remarks.",
   paths: ["listingRemarks"],
   stage: "finalListing",
   groupStyle: "titled",
