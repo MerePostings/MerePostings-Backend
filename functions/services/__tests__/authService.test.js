@@ -1,6 +1,6 @@
 jest.mock("../../config/db");
 jest.mock("../mailService", () => ({sendVerificationEmail: jest.fn()}));
-jest.mock("../../config/hubspotSDK", () => ({createContactIfNotExists: jest.fn()}));
+jest.mock("../../config/smartConnections", () => ({queueSmartConnectionsContact: jest.fn()}));
 jest.mock("firebase-functions/logger", () => ({error: jest.fn()}));
 
 const mockAuth = {

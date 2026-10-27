@@ -3,7 +3,7 @@ const firebaseAdmin = require("../config/firebaseAdmin");
 const {db} = require("../config/db");
 const AppError = require("../utils/AppError");
 const {sendVerificationEmail} = require("./mailService");
-const {createContactIfNotExists} = require("../config/hubspotSDK");
+const {queueSmartConnectionsContact} = require("../config/smartConnections");
 const {FieldValue} = require("firebase-admin/firestore");
 const {toSiteActionLink} = require("../utils/authActionLink");
 
@@ -119,7 +119,13 @@ const authService = {
         acceptedDate: FieldValue.serverTimestamp(),
       });
 
-      createContactIfNotExists({email: email, firstname: firstName, lastname: lastName, platform_affiliation: "Mere Postings"});
+      await queueSmartConnectionsContact({
+        event: "SIGN_UP",
+        email,
+        firstName,
+        lastName,
+        details: marketingOptIn ? "Opted in to marketing emails" : "",
+      });
 
       // The account exists at this point, so a failed email mustn't fail the
       // sign-up: the user can resend from the verify-email screen.
