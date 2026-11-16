@@ -52,6 +52,20 @@ describe("smartConnections", () => {
       await expect(queueSmartConnectionsContact(ENTRY)).resolves.toBeUndefined();
     });
 
+    it("keeps the payment of PAYMENT and REFUND entries", async () => {
+      __refs.collectionRef.add.mockResolvedValue({id: "x"});
+      const payment = {id: "pi_1", description: "Listing fee", amount: 50000, paidAt: "2026-11-12T15:00:00.000Z"};
+      await queueSmartConnectionsContact({event: "PAYMENT", email: "jane@example.com", payment});
+
+      expect(__refs.collectionRef.add).toHaveBeenCalledWith(expect.objectContaining({event: "PAYMENT", payment}));
+    });
+
+    it("skips payment events without a payment, and other events with one", async () => {
+      await queueSmartConnectionsContact({...ENTRY, event: "PAYMENT"});
+      await queueSmartConnectionsContact({...ENTRY, payment: {id: "pi_1"}});
+      expect(__refs.collectionRef.add).not.toHaveBeenCalled();
+    });
+
     it("skips entries without an email or a known event", async () => {
       await queueSmartConnectionsContact({...ENTRY, email: " "});
       await queueSmartConnectionsContact({...ENTRY, event: "PARTY"});

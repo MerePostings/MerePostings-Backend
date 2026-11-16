@@ -6,12 +6,14 @@ const paymentIntentsCreate = jest.fn();
 const paymentIntentsRetrieve = jest.fn();
 const refundsCreate = jest.fn();
 const customersCreate = jest.fn();
+const chargesRetrieve = jest.fn();
 
 const stripe = {
   webhooks: {constructEvent},
   paymentIntents: {create: paymentIntentsCreate, retrieve: paymentIntentsRetrieve},
   refunds: {create: refundsCreate},
   customers: {create: customersCreate},
+  charges: {retrieve: chargesRetrieve},
 };
 
 module.exports = stripe;

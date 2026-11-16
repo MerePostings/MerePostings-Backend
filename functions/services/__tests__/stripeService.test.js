@@ -1,9 +1,11 @@
 jest.mock("../../config/db");
 jest.mock("../../config/stripe");
+jest.mock("../../config/smartConnections");
 
 const {__refs: dbRefs, resetDbMock} = require("../../config/db");
 const stripe = require("../../config/stripe");
 const stripeService = require("../stripeService");
+const {queueSmartConnectionsContact} = require("../../config/smartConnections");
 
 // jest.setup.js stubs ADMIN_FEE_CENTS to "2500" for the whole suite.
 const ADMIN_FEE_CENTS = 2500;
@@ -96,10 +98,11 @@ describe("stripeService.requestRefund", () => {
     dbRefs.queryRef.get.mockResolvedValueOnce({
       docs: [{data: () => ({paymentIntentId: "pi_123", customerId: "cus_1"})}],
     });
-    stripe.paymentIntents.retrieve.mockResolvedValueOnce({amount: amountPaid});
-    stripe.refunds.create.mockResolvedValueOnce({id: "re_123"});
+    stripe.paymentIntents.retrieve.mockResolvedValueOnce({id: "pi_123", amount: amountPaid, created: 1793989000});
+    stripe.refunds.create.mockResolvedValueOnce({id: "re_123", amount: expectedRefund});
     dbRefs.docRef.update.mockResolvedValueOnce(undefined);
     dbRefs.collectionRef.add.mockResolvedValueOnce(undefined);
+    dbRefs.docRef.get.mockResolvedValueOnce({data: () => ({email: "jane@example.com", firstName: "Jane", lastName: "Doe"})});
 
     await stripeService.requestRefund("listing-1", "user-1");
 
@@ -110,6 +113,30 @@ describe("stripeService.requestRefund", () => {
     expect(dbRefs.collectionRef.add).toHaveBeenCalledWith(
         expect.objectContaining({amount: -(expectedRefund / 100), type: "refund"}),
     );
+    expect(queueSmartConnectionsContact).toHaveBeenCalledWith({
+      event: "REFUND",
+      email: "jane@example.com",
+      firstName: "Jane",
+      lastName: "Doe",
+      payment: expect.objectContaining({id: "pi_123", amount: amountPaid, amountRefunded: expectedRefund}),
+    });
+  });
+
+  test("a failure telling Smart Connections never fails the refund", async () => {
+    dbRefs.docRef.get.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ownerId: "user-1", status: "draft", paid: true}),
+    });
+    dbRefs.queryRef.get.mockResolvedValueOnce({
+      docs: [{data: () => ({paymentIntentId: "pi_123", customerId: "cus_1"})}],
+    });
+    stripe.paymentIntents.retrieve.mockResolvedValueOnce({id: "pi_123", amount: 50000, created: 1793989000});
+    stripe.refunds.create.mockResolvedValueOnce({id: "re_123", amount: 47500});
+    dbRefs.docRef.update.mockResolvedValueOnce(undefined);
+    dbRefs.collectionRef.add.mockResolvedValueOnce(undefined);
+    dbRefs.docRef.get.mockRejectedValueOnce(new Error("Firestore down"));
+
+    await expect(stripeService.requestRefund("listing-1", "user-1")).resolves.toBeUndefined();
   });
 
   // Edge case: if a listing is paid:true with no matching transactions doc,
@@ -128,5 +155,45 @@ describe("stripeService.requestRefund", () => {
       statusCode: 500,
       message: "Failed to process refund. Please contact support.",
     });
+  });
+});
+
+describe("stripeService.smartConnectionsPayment", () => {
+  const paymentIntent = {
+    id: "pi_1",
+    description: "Mere Postings - One-time listing creation fee",
+    amount: 50000,
+    amount_received: 50000,
+    currency: "cad",
+    created: 1793989000,
+    latest_charge: "ch_1",
+  };
+
+  test("adds the card, the receipt and the charge time", async () => {
+    stripe.charges.retrieve.mockResolvedValueOnce({
+      created: 1793990000,
+      receipt_url: "https://pay.stripe.com/receipts/1",
+      payment_method_details: {card: {brand: "visa", last4: "4242"}},
+    });
+
+    await expect(stripeService.smartConnectionsPayment(paymentIntent)).resolves.toEqual({
+      id: "pi_1",
+      description: "Mere Postings - One-time listing creation fee",
+      amount: 50000,
+      amountRefunded: 0,
+      currency: "cad",
+      paidAt: new Date(1793990000 * 1000).toISOString(),
+      cardBrand: "visa",
+      cardLast4: "4242",
+      receiptUrl: "https://pay.stripe.com/receipts/1",
+    });
+  });
+
+  test("still describes the payment when the charge can't be read", async () => {
+    stripe.charges.retrieve.mockRejectedValueOnce(new Error("Stripe down"));
+
+    const payment = await stripeService.smartConnectionsPayment(paymentIntent, 1000);
+    expect(payment).toMatchObject({id: "pi_1", amount: 50000, amountRefunded: 1000});
+    expect(payment.cardLast4).toBeUndefined();
   });
 });
