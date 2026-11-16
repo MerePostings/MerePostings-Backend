@@ -1,6 +1,6 @@
 const postmark = require("postmark");
 const logger = require("firebase-functions/logger");
-const {recordContactInquiry} = require("../config/hubspotSDK");
+const {queueSmartConnectionsContact} = require("../config/smartConnections");
 const AppError = require("../utils/AppError");
 
 // Built on first send rather than at load: ServerClient throws without a
@@ -17,7 +17,7 @@ const MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
 const VERIFICATION_SENDER = "Smart Hub <noreply@merepostings.com>";
 
 const sendEmail = (message) =>
-  getClient().sendEmail({...message, MessageStream: MESSAGE_STREAM});
+  client.sendEmail({...message, MessageStream: MESSAGE_STREAM});
 
 const sendEmailSafely = (message) =>
   sendEmail(message).catch((err) => {
@@ -56,13 +56,9 @@ const noteLines = (fields) =>
       .map(([label, value]) => `${label}: ${value}`)
       .join("\n");
 
-const recordInquirySafely = async (payload) => {
-  try {
-    await recordContactInquiry(payload);
-  } catch (error) {
-    logger.error("HubSpot contact inquiry failed", error);
-  }
-};
+// Adds the person to Smart Connections with the inquiry as website activity.
+const recordInquiry = (event, {email, firstname, lastname, phone, noteBody}) =>
+  queueSmartConnectionsContact({event, email, firstName: firstname, lastName: lastname, phone, details: noteBody});
 
 // Postmark API error codes that mean "this recipient", not "try again later".
 // https://postmarkapp.com/developer/api/overview#error-codes
@@ -711,7 +707,7 @@ const guestMeetingRequest = async ({email, year, month, day, time, phone, topic,
 </html>`,
   });
 
-  await recordInquirySafely({
+  await recordInquiry("MEETING", {
     email,
     phone,
     noteBody: noteLines([
@@ -795,7 +791,7 @@ const callbackRequest = async ({name, email, phone, time, topic, notes}) => {
   });
 
   const {firstname, lastname} = splitName(name);
-  await recordInquirySafely({
+  await recordInquiry("CALLBACK", {
     email,
     firstname,
     lastname,
@@ -881,7 +877,7 @@ const contactMessage = async ({name, email, phone, property, topic, message}) =>
   });
 
   const {firstname, lastname} = splitName(name);
-  await recordInquirySafely({
+  await recordInquiry("MESSAGE", {
     email,
     firstname,
     lastname,

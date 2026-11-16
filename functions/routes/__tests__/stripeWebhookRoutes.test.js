@@ -2,6 +2,7 @@ jest.mock("../../config/stripe");
 jest.mock("../../services/mailService");
 jest.mock("../../services/propertyService");
 jest.mock("../../services/stripeService");
+jest.mock("../../config/smartConnections");
 
 const express = require("express");
 const request = require("supertest");
@@ -9,7 +10,8 @@ const logger = require("firebase-functions/logger");
 const stripe = require("../../config/stripe");
 const {sendPaymentConfirmationEmail} = require("../../services/mailService");
 const {markSubmitted} = require("../../services/propertyService");
-const {addTransaction} = require("../../services/stripeService");
+const {addTransaction, smartConnectionsPayment} = require("../../services/stripeService");
+const {queueSmartConnectionsContact} = require("../../config/smartConnections");
 const stripeWebhookRoutes = require("../stripeWebhookRoutes");
 
 // Mount only this router, not the real app.js — app.js transitively requires
@@ -73,6 +75,22 @@ describe("POST /v1/webhook/stripe-webhook", () => {
         1,
         "listing-1",
     );
+  });
+
+  test("payment_intent.succeeded queues the payment for Smart Connections", async () => {
+    const payment = {id: "pi_123", description: "Listing fee", amount: 50000, paidAt: "2026-11-12T15:00:00.000Z"};
+    stripe.webhooks.constructEvent.mockReturnValueOnce(baseEvent);
+    smartConnectionsPayment.mockResolvedValueOnce(payment);
+
+    await post(buildApp(), baseEvent);
+
+    expect(smartConnectionsPayment).toHaveBeenCalledWith(baseEvent.data.object);
+    expect(queueSmartConnectionsContact).toHaveBeenCalledWith({
+      event: "PAYMENT",
+      email: "jane@example.com",
+      firstName: "Jane",
+      payment,
+    });
   });
 
   test("missing listingId in metadata short-circuits with no side effects", async () => {

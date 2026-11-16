@@ -4,7 +4,41 @@ const AppError = require("../utils/AppError");
 const {FieldValue} = require("firebase-admin/firestore");
 const stripe = require("../config/stripe");
 const calculateListingPrice = require("../utils/listingPriceCalculator");
+const {queueSmartConnectionsContact} = require("../config/smartConnections");
 const stripeService = {
+
+  /**
+     * The payment as Smart Connections records it: a paid invoice on the
+     * person's contact. Reads the card and Stripe's receipt from the latest
+     * charge; if that fails, the payment is still sent without them.
+     * @param {object} paymentIntent a succeeded PaymentIntent
+     * @param {number} amountRefunded cents refunded so far
+     */
+  smartConnectionsPayment: async (paymentIntent, amountRefunded = 0) => {
+    const payment = {
+      id: paymentIntent.id,
+      description: paymentIntent.description || "Mere Postings - One-time listing creation fee",
+      amount: paymentIntent.amount_received || paymentIntent.amount,
+      amountRefunded,
+      currency: paymentIntent.currency || "cad",
+      paidAt: (paymentIntent.created ? new Date(paymentIntent.created * 1000) : new Date()).toISOString(),
+    };
+    const chargeId = typeof paymentIntent.latest_charge === "string" ?
+      paymentIntent.latest_charge :
+      paymentIntent.latest_charge?.id;
+    if (!chargeId) return payment;
+    try {
+      const charge = await stripe.charges.retrieve(chargeId);
+      const card = charge.payment_method_details?.card;
+      if (charge.created) payment.paidAt = new Date(charge.created * 1000).toISOString();
+      if (card?.brand) payment.cardBrand = card.brand;
+      if (card?.last4) payment.cardLast4 = card.last4;
+      if (charge.receipt_url) payment.receiptUrl = charge.receipt_url;
+    } catch (e) {
+      logger.warn("[stripe] Couldn't read the charge of a payment", {paymentIntentId: paymentIntent.id});
+    }
+    return payment;
+  },
 
   /**
      * Creates a new Stripe customer and saves their customerId to Firestore
@@ -187,6 +221,20 @@ const stripeService = {
         type: "refund",
         createdAt: FieldValue.serverTimestamp(),
       });
+
+      // The refund has gone through; Smart Connections hearing about it must not undo that.
+      try {
+        const owner = (await db.collection("users").doc(uid).get()).data() || {};
+        await queueSmartConnectionsContact({
+          event: "REFUND",
+          email: owner.email,
+          firstName: owner.firstName,
+          lastName: owner.lastName,
+          payment: await stripeService.smartConnectionsPayment(paymentIntent, refund.amount),
+        });
+      } catch (e) {
+        logger.error("[smartConnections] Couldn't queue a refund", {listingId, message: e.message});
+      }
     } catch (e) {
       if (e instanceof AppError) throw e;
       logger.error("[stripe] Failed to process refund:", e);

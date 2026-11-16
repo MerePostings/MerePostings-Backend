@@ -5,7 +5,7 @@ const AppError = require("../utils/AppError");
 const {calendar, calendarId, impersonatedUser} = require("../config/googleOAuth");
 const {formatTime} = require("../utils/formatDate");
 const {meetingScheduled} = require("./mailService");
-const {recordContactInquiry} = require("../config/hubspotSDK");
+const {queueSmartConnectionsContact} = require("../config/smartConnections");
 const {DateTime} = require("luxon");
 
 const timeZone = "America/Toronto";
@@ -123,24 +123,21 @@ const googleFunctionsService = {
       await userRef.update({lastMeeting: DateTime.now().toJSDate()});
       await meetingScheduled(email, name, humanDate, time, link);
 
-      try {
-        await recordContactInquiry({
-          email,
-          firstname: name,
-          lastname: lastName,
-          phone,
-          noteBody: [
-            "Inquiry: zoom_meeting",
-            topic && `Topic: ${topic}`,
-            `Date: ${humanDate}`,
-            `Time: ${time}`,
-            phone && `Phone: ${phone}`,
-            notes && `Notes: ${notes}`,
-          ].filter(Boolean).join("\n"),
-        });
-      } catch (hubspotError) {
-        logger.error("HubSpot contact failed", hubspotError);
-      }
+      await queueSmartConnectionsContact({
+        event: "MEETING",
+        email,
+        firstName: name,
+        lastName,
+        phone,
+        details: [
+          "Inquiry: zoom_meeting",
+          topic && `Topic: ${topic}`,
+          `Date: ${humanDate}`,
+          `Time: ${time}`,
+          phone && `Phone: ${phone}`,
+          notes && `Notes: ${notes}`,
+        ].filter(Boolean).join("\n"),
+      });
 
       return response.data;
     } catch (error) {

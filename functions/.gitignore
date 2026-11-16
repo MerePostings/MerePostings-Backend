@@ -1,6 +1,5 @@
 
 .env*
-.secret.local
 
 # Logs
 logs

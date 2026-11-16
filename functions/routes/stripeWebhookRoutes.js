@@ -4,7 +4,8 @@ const logger = require("firebase-functions/logger");
 const stripe = require("../config/stripe");
 const {sendPaymentConfirmationEmail} = require("../services/mailService");
 const {markSubmitted} = require("../services/propertyService");
-const {addTransaction} = require("../services/stripeService");
+const {addTransaction, smartConnectionsPayment} = require("../services/stripeService");
+const {queueSmartConnectionsContact} = require("../config/smartConnections");
 
 router.post("/stripe-webhook", async (req, res) =>{
   const sig = req.headers["stripe-signature"];
@@ -37,6 +38,13 @@ router.post("/stripe-webhook", async (req, res) =>{
           // Send confirmation email
           await sendPaymentConfirmationEmail(userEmail, firstName, session.amount / 100, listingLink);
           await addTransaction(customerId, session.amount / 100, session.id, "", "processed", "one-time", 1, listingId);
+          // A paid invoice on the person's contact in Smart Connections.
+          await queueSmartConnectionsContact({
+            event: "PAYMENT",
+            email: userEmail,
+            firstName,
+            payment: await smartConnectionsPayment(session),
+          });
         } catch (e) {
           logger.error(e);
         }
