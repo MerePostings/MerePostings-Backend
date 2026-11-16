@@ -95,6 +95,14 @@ router.post(
 );
 
 router.post(
+    "/:listingId/submit-complimentary",
+    verifyFirebaseToken,
+    requireVerifiedEmail,
+    validate(selectedAddonsSchema),
+    propertyController.submitComplimentaryListing,
+);
+
+router.post(
     "/request-refund/:listingId",
     verifyFirebaseToken,
     requireVerifiedEmail,

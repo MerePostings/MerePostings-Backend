@@ -31,6 +31,7 @@ const userService = {
         firstName: docSnap.data().firstName,
         lastName: docSnap.data().lastName,
         email: docSnap.data().email,
+        ifAdmin: docSnap.data().ifAdmin === true,
       };
 
       return user;

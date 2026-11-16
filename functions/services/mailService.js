@@ -3,7 +3,14 @@ const logger = require("firebase-functions/logger");
 const {queueSmartConnectionsContact} = require("../config/smartConnections");
 const AppError = require("../utils/AppError");
 
-const client = new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
+// Built on first send rather than at load: ServerClient throws without a
+// token, so a missing POSTMARK_SERVER_TOKEN fails only the send, not every
+// request (or the Firebase CLI's function discovery at deploy time).
+let client;
+const getClient = () => {
+  client ??= new postmark.ServerClient(process.env.POSTMARK_SERVER_TOKEN);
+  return client;
+};
 
 const MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
 
