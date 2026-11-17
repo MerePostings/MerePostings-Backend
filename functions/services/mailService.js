@@ -17,7 +17,7 @@ const MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
 const VERIFICATION_SENDER = "Smart Hub <noreply@merepostings.com>";
 
 const sendEmail = (message) =>
-  client.sendEmail({...message, MessageStream: MESSAGE_STREAM});
+  getClient().sendEmail({...message, MessageStream: MESSAGE_STREAM});
 
 const sendEmailSafely = (message) =>
   sendEmail(message).catch((err) => {
