@@ -2,7 +2,7 @@ const logger = require("firebase-functions/logger");
 const {FieldValue} = require("firebase-admin/firestore");
 const {db} = require("./db");
 
-// Sign-ups, inquiries and payments waiting to be sent to Smart Connections,
+// Sign-ups, Contact us inquiries and payments waiting to be sent to Smart Connections,
 // the brokerage's contact list. Payments become paid invoices on the contact. deliverToSmartConnections (index.js) sends each
 // one and retries until it gets through, so a Smart Connections outage never
 // loses a lead or slows down the request that created it.
@@ -11,7 +11,7 @@ const TIMEOUT_MS = 10 * 1000;
 // Firebase retries a failing trigger with backoff; past this age we stop.
 const GIVE_UP_AFTER_MS = 24 * 60 * 60 * 1000;
 
-const EVENTS = new Set(["SIGN_UP", "MESSAGE", "CALLBACK", "MEETING", "PAYMENT", "REFUND"]);
+const EVENTS = new Set(["SIGN_UP", "INQUIRY", "PAYMENT", "REFUND"]);
 // These carry the payment, and only these.
 const PAYMENT_EVENTS = new Set(["PAYMENT", "REFUND"]);
 
@@ -20,14 +20,20 @@ const trimmed = (value) => (value == null ? "" : String(value).trim());
 /**
  * Queues a contact for Smart Connections. Never throws: the user's request has
  * already succeeded, so a failed write is logged instead.
- * PAYMENT and REFUND also take the payment (see stripeService.smartConnectionsPayment).
+ * PAYMENT and REFUND also take the payment (see stripeService.smartConnectionsPayment);
+ * INQUIRY takes the Contact us form's topic and message.
  * @param {{event: string, email: string, firstName?: string, lastName?: string,
- *   phone?: string, details?: string, payment?: object}} contact
+ *   phone?: string, details?: string, payment?: object,
+ *   inquiry?: {topic: string, message: string}}} contact
  */
-const queueSmartConnectionsContact = async ({event, email, firstName, lastName, phone, details, payment}) => {
+const queueSmartConnectionsContact = async ({event, email, firstName, lastName, phone, details, payment, inquiry}) => {
   if (!EVENTS.has(event) || !trimmed(email)) return;
   if (PAYMENT_EVENTS.has(event) !== Boolean(payment)) {
     logger.error("[smartConnections] Payment events need their payment, and only they take one", {event});
+    return;
+  }
+  if ((event === "INQUIRY") !== Boolean(inquiry)) {
+    logger.error("[smartConnections] Inquiries need their inquiry, and only they take one", {event});
     return;
   }
   try {
@@ -39,6 +45,7 @@ const queueSmartConnectionsContact = async ({event, email, firstName, lastName, 
       phone: trimmed(phone),
       details: trimmed(details),
       ...(payment ? {payment} : {}),
+      ...(inquiry ? {inquiry: {topic: trimmed(inquiry.topic), message: trimmed(inquiry.message)}} : {}),
       createdAt: FieldValue.serverTimestamp(),
     });
   } catch (error) {
@@ -67,6 +74,7 @@ const deliverOutboxEntry = async (id, entry) => {
       phone: entry.phone,
       details: entry.details,
       ...(entry.payment ? {payment: entry.payment} : {}),
+      ...(entry.inquiry ? {inquiry: entry.inquiry} : {}),
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

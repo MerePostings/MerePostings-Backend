@@ -50,16 +50,6 @@ const emailRow = (label, value) => {
                 </tr>`;
 };
 
-const noteLines = (fields) =>
-  fields
-      .filter(([, value]) => value != null && String(value).trim() !== "")
-      .map(([label, value]) => `${label}: ${value}`)
-      .join("\n");
-
-// Adds the person to Smart Connections with the inquiry as website activity.
-const recordInquiry = (event, {email, firstname, lastname, phone, noteBody}) =>
-  queueSmartConnectionsContact({event, email, firstName: firstname, lastName: lastname, phone, details: noteBody});
-
 // Postmark API error codes that mean "this recipient", not "try again later".
 // https://postmarkapp.com/developer/api/overview#error-codes
 const RECIPIENT_ERROR_MESSAGES = {
@@ -428,307 +418,12 @@ const sendPaymentConfirmationEmail = async (
   });
 };
 
-const meetingScheduled = async (email, name, date, time, link) => {
-  return sendEmailSafely({
-    From: `${process.env.EMAILUSER}`,
-    To: `${email}`,
-    Subject: `Your Meeting Has Been Scheduled`,
-    HtmlBody: `
-      <!doctype html>
-      <html lang="und" dir="auto" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
-        <head>
-          <title></title>
-          <meta http-equiv="X-UA-Compatible" content="IE=edge">
-          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-
-          <link href="https://fonts.googleapis.com/css?family=Playfair+Display:400,500,600,700" rel="stylesheet" type="text/css">
-          <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,500,700" rel="stylesheet" type="text/css">
-
-          <style type="text/css">
-            #outlook a { padding: 0; }
-            body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-            table, td { border-collapse: collapse; width: 100%; }
-            img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
-            p { display: block; margin: 13px 0; }
-            .hp-nav__logo {
-              font-family: 'Playfair Display', serif;
-              font-size: 35px;
-              font-weight: 600;
-              color: #ffffff;
-              letter-spacing: 0.02em;
-              text-decoration: none !important;
-            }
-            .hp-nav__logo span { color: #154360; }
-          </style>
-
-          <style type="text/css">
-            @media only screen and (min-width:480px) {
-              .mj-column-per-100 { width: 100% !important; max-width: 100%; }
-            }
-          </style>
-          <style media="screen and (min-width:480px)">
-            .moz-text-html .mj-column-per-100 { width: 100% !important; max-width: 100%; }
-          </style>
-          <style type="text/css">
-            @media only screen and (max-width:479px) {
-              table.mj-full-width-mobile { width: 100% !important; }
-              td.mj-full-width-mobile { width: auto !important; }
-            }
-          </style>
-        </head>
-
-        <body style="word-spacing:normal;background-color:#F4F4F4;">
-          <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">Your meeting has been scheduled</div>
-
-          <div style="background-color:#F4F4F4;" lang="und" dir="auto">
-            <div style="background:#7a8c6e;background-color:#7a8c6e;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#7a8c6e;background-color:#7a8c6e;width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="direction:ltr;font-size:0px;padding:20px 0;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                        <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
-                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border-spacing:0px;">
-                                  <tbody>
-                                    <tr>
-                                      <td align="center" style="padding:0;">
-                                        <a href="${process.env.FRONTEND_URL}"
-                                          class="hp-nav__logo"
-                                          style="text-decoration: none !important; color: #ffffff; font-family: 'Playfair Display', serif; font-size: 35px; font-weight: 600; letter-spacing: 0.02em;">
-                                          <span>Mere</span>Postings
-                                        </a>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="direction:ltr;font-size:0px;padding:30px 20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                        <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                <div style="font-family:'Playfair Display', serif;font-size:28px;line-height:1;text-align:center;color:#333333;">Meeting Scheduled!</div>
-                              </td>
-                            </tr>
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                <div style="font-family:'Open Sans', sans-serif;font-size:16px;line-height:1;text-align:center;color:#777777;">Please take a look at the details below.</div>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div style="background:#ffffff;background-color:#ffffff;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;background-color:#ffffff;width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="direction:ltr;font-size:0px;padding:20px 20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                        <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-
-                            <tr>
-                              <td align="left" style="font-size:0px;padding:10px 25px 6px 25px;word-break:break-word;">
-                                <div style="font-family:'Open Sans', sans-serif;font-size:18px;font-weight:600;line-height:1;text-align:left;color:#333333;">
-                                  Hello, ${name}!
-                                </div>
-                              </td>
-                            </tr>
-
-                            <tr>
-                              <td align="left" style="font-size:0px;padding:6px 25px 10px 25px;word-break:break-word;">
-                                <div style="font-family:'Open Sans', sans-serif;font-size:14px;font-weight:400;line-height:1.6;text-align:left;color:#555555;">
-                                  Your meeting has been scheduled for <strong>${date}</strong> at <strong>${time}</strong>. 
-                                  If you have any questions or are unable to attend, please reach out to us at 
-                                  <a href="mailto:support@merepostings.com" style="color:#154360;">support@merepostings.com</a>.
-                                </div>
-                              </td>
-                            </tr>
-
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:25px 30px;word-break:break-word;">
-                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;">
-                                  <tbody>
-                                    <tr>
-                                      <td align="center" role="presentation" style="border:none;border-radius:5px;cursor:auto;mso-padding-alt:10px 25px;background:transparent;" valign="middle">
-                                        <a href="${link}"
-                                          style="display:inline-block;background:transparent;color:#154360;border:2px solid #154360;font-family:'Open Sans', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;line-height:120%;margin:0;text-decoration:none;text-transform:none;padding:12px 32px;border-radius:5px;"
-                                          target="_blank">Join Meeting</a>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-
-                          </tbody>
-                        </table>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div style="background:#7a8c6e;background-color:#7a8c6e;margin:0px auto;max-width:600px;">
-              <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#7a8c6e;background-color:#7a8c6e;width:100%;">
-                <tbody>
-                  <tr>
-                    <td style="direction:ltr;font-size:0px;padding:20px;text-align:center;">
-                      <div class="mj-column-per-100 mj-outlook-group-fix" style="font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-align:top;width:100%;">
-                        <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:top;" width="100%">
-                          <tbody>
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">
-                                  This is an auto-generated email. Please do not reply to this message.
-                                  For help with any questions about your Mere Postings account, please contact us at
-                                  <a href="mailto:support@merepostings.com" style="color:#e9e9e9;text-decoration:none;">support@merepostings.com</a>.
-                                </div>
-                              </td>
-                            </tr>
-                            <tr>
-                              <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                                <div style="font-family:'Open Sans', sans-serif;font-size:12px;line-height:1;text-align:center;color:#e9e9e9;">© 2025 Mere Postings. All rights reserved.</div>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-          </div>
-        </body>
-      </html>`,
-  });
-};
-
-const guestMeetingRequest = async ({email, year, month, day, time, phone, topic, notes}) => {
-  const dateStr = new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
+// The Contact us form: emails support and records the inquiry in Smart Connections.
+const contactInquiry = async ({name, email, topic, message}) => {
   const result = await sendEmailSafely({
     From: `${process.env.EMAILUSER}`,
     To: "support@merepostings.com",
-    Subject: `New Guest Meeting Request${topic ? ` — ${topic}` : ""} — ${dateStr} at ${time}`,
-    HtmlBody: `
-<!doctype html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
-</head>
-<body style="margin:0;padding:0;background-color:#F4F4F4;font-family:'Open Sans',sans-serif;">
- 
-  <!-- Outer wrapper -->
-  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#F4F4F4;">
-    <tr>
-      <td align="center" style="padding:40px 20px;">
- 
-        <!-- Email shell: all sections share this 600px table so widths always match -->
-        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
- 
-          <!-- HEADER -->
-          <tr>
-            <td style="background:#7a8c6e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
-              <a href="${process.env.FRONTEND_URL}"
-                style="text-decoration:none;font-family:'Playfair Display',serif;font-size:32px;font-weight:600;letter-spacing:0.02em;color:#ffffff;">
-                <span style="color:#154360;">Mere</span>Postings
-              </a>
-            </td>
-          </tr>
- 
-          <!-- BODY -->
-          <tr>
-            <td style="background:#ffffff;padding:36px 40px;">
-              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">📅 New Guest Meeting Request</h2>
-              <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
-                A guest has requested a meeting. Details are below.
-              </p>
- 
-              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
-                ${emailRow("Date", dateStr)}
-                ${emailRow("Time", time)}
-                ${emailRow("Guest Email", email)}
-                ${emailRow("Phone", phone)}
-                ${emailRow("Topic", topic)}
-                ${emailRow("Notes", notes)}
-              </table>
-            </td>
-          </tr>
- 
-          <!-- FOOTER -->
-          <tr>
-            <td style="background:#7a8c6e;padding:16px 40px;text-align:center;border-radius:0 0 8px 8px;">
-              <p style="color:#e9e9e9;font-size:12px;margin:0;font-family:'Open Sans',sans-serif;">© 2025 Mere Postings. All rights reserved.</p>
-            </td>
-          </tr>
- 
-        </table>
-      </td>
-    </tr>
-  </table>
- 
-</body>
-</html>`,
-  });
-
-  await recordInquiry("MEETING", {
-    email,
-    phone,
-    noteBody: noteLines([
-      ["Inquiry", "zoom_meeting"],
-      ["Topic", topic],
-      ["Date", dateStr],
-      ["Time", time],
-      ["Phone", phone],
-      ["Notes", notes],
-    ]),
-  });
-
-  return result;
-};
-
-// ── 2. Callback request notification ─────────────────────────────────────────
-const callbackRequest = async ({name, email, phone, time, topic, notes}) => {
-  const result = await sendEmailSafely({
-    From: `${process.env.EMAILUSER}`,
-    To: "support@merepostings.com",
-    Subject: `New Callback Request${topic ? ` — ${topic}` : ""}`,
+    Subject: `New Contact us inquiry from ${name} — ${topic}`,
     HtmlBody: `
 <!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -758,102 +453,14 @@ const callbackRequest = async ({name, email, phone, time, topic, notes}) => {
           <!-- BODY -->
           <tr>
             <td style="background:#ffffff;padding:36px 40px;">
-              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">📞 New Callback Request</h2>
+              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">✉️ New Contact us inquiry</h2>
               <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
-                Someone has requested a callback. Details are below.
+                Someone sent an inquiry through the Contact us form.
               </p>
  
               <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
                 ${emailRow("Name", name)}
                 ${emailRow("Email", email)}
-                ${emailRow("Phone", phone)}
-                ${emailRow("Best time", time)}
-                ${emailRow("Topic", topic)}
-                ${emailRow("Notes", notes)}
-              </table>
-            </td>
-          </tr>
- 
-          <!-- FOOTER -->
-          <tr>
-            <td style="background:#7a8c6e;padding:16px 40px;text-align:center;border-radius:0 0 8px 8px;">
-              <p style="color:#e9e9e9;font-size:12px;margin:0;font-family:'Open Sans',sans-serif;">© 2025 Mere Postings. All rights reserved.</p>
-            </td>
-          </tr>
- 
-        </table>
-      </td>
-    </tr>
-  </table>
- 
-</body>
-</html>`,
-  });
-
-  const {firstname, lastname} = splitName(name);
-  await recordInquiry("CALLBACK", {
-    email,
-    firstname,
-    lastname,
-    phone,
-    noteBody: noteLines([
-      ["Inquiry", "callback"],
-      ["Topic", topic],
-      ["Name", name],
-      ["Phone", phone],
-      ["Best time", time],
-      ["Notes", notes],
-    ]),
-  });
-
-  return result;
-};
-
-// ── 3. Send-a-message notification ───────────────────────────────────────────
-const contactMessage = async ({name, email, phone, property, topic, message}) => {
-  const result = await sendEmailSafely({
-    From: `${process.env.EMAILUSER}`,
-    To: "support@merepostings.com",
-    Subject: `New Message from ${name}${topic ? ` — ${topic}` : ""}`,
-    HtmlBody: `
-<!doctype html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
-</head>
-<body style="margin:0;padding:0;background-color:#F4F4F4;font-family:'Open Sans',sans-serif;">
- 
-  <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#F4F4F4;">
-    <tr>
-      <td align="center" style="padding:40px 20px;">
- 
-        <table width="600" border="0" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
- 
-          <!-- HEADER -->
-          <tr>
-            <td style="background:#7a8c6e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
-              <a href="${process.env.FRONTEND_URL}"
-                style="text-decoration:none;font-family:'Playfair Display',serif;font-size:32px;font-weight:600;letter-spacing:0.02em;color:#ffffff;">
-                <span style="color:#154360;">Mere</span>Postings
-              </a>
-            </td>
-          </tr>
- 
-          <!-- BODY -->
-          <tr>
-            <td style="background:#ffffff;padding:36px 40px;">
-              <h2 style="color:#1a2e1f;font-size:22px;margin:0 0 8px;font-family:'Open Sans',sans-serif;">✉️ New Contact Message</h2>
-              <p style="color:#555555;font-size:14px;line-height:1.6;margin:0 0 24px;">
-                You've received a new message through the contact form.
-              </p>
- 
-              <table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;color:#333333;border-collapse:collapse;">
-                ${emailRow("Name", name)}
-                ${emailRow("Email", email)}
-                ${emailRow("Phone", phone)}
-                ${emailRow("Property / MLS", property)}
                 ${emailRow("Topic", topic)}
                 ${emailRow("Message", message)}
               </table>
@@ -877,19 +484,12 @@ const contactMessage = async ({name, email, phone, property, topic, message}) =>
   });
 
   const {firstname, lastname} = splitName(name);
-  await recordInquiry("MESSAGE", {
+  await queueSmartConnectionsContact({
+    event: "INQUIRY",
     email,
-    firstname,
-    lastname,
-    phone,
-    noteBody: noteLines([
-      ["Inquiry", "message"],
-      ["Topic", topic],
-      ["Name", name],
-      ["Phone", phone],
-      ["Property / MLS", property],
-      ["Message", message],
-    ]),
+    firstName: firstname,
+    lastName: lastname,
+    inquiry: {topic, message},
   });
 
   return result;
@@ -907,9 +507,6 @@ const sendNotificationEmail = async (email, subject, htmlBody) => {
 module.exports = {
   sendVerificationEmail,
   sendPaymentConfirmationEmail,
-  meetingScheduled,
-  guestMeetingRequest,
-  callbackRequest,
-  contactMessage,
+  contactInquiry,
   sendNotificationEmail,
 };

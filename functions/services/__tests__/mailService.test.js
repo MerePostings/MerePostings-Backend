@@ -57,59 +57,47 @@ describe("mailService", () => {
     );
   });
 
-  it("puts callback topic, time, phone, and notes in the email and the Smart Connections activity", async () => {
+  it("emails the Contact us inquiry to support and queues it for Smart Connections", async () => {
     mockSendEmail.mockResolvedValue({});
-    const {callbackRequest} = loadMailService();
+    const {contactInquiry} = loadMailService();
 
-    await callbackRequest({
+    await contactInquiry({
       name: "Jane Smith",
       email: "jane@example.com",
-      phone: "416-555-0123",
-      time: "This afternoon",
       topic: "My listing",
-      notes: "MLS A1234567",
+      message: "Can I change my photos? <b>now</b>",
     });
 
-    const html = mockSendEmail.mock.calls[0][0].HtmlBody;
-    expect(html).toContain("Jane Smith");
-    expect(html).toContain("jane@example.com");
-    expect(html).toContain("416-555-0123");
-    expect(html).toContain("This afternoon");
-    expect(html).toContain("My listing");
-    expect(html).toContain("MLS A1234567");
-    expect(html).not.toMatch(/undefined/i);
-    expect(html).not.toContain("[object Object]");
+    const sent = mockSendEmail.mock.calls[0][0];
+    expect(sent.To).toBe("support@merepostings.com");
+    expect(sent.Subject).toBe("New Contact us inquiry from Jane Smith — My listing");
+    expect(sent.HtmlBody).toContain("jane@example.com");
+    expect(sent.HtmlBody).toContain("Can I change my photos? &lt;b&gt;now&lt;/b&gt;");
+    expect(sent.HtmlBody).not.toMatch(/undefined/i);
 
-    expect(mockQueueContact).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: "CALLBACK",
-          email: "jane@example.com",
-          firstName: "Jane",
-          lastName: "Smith",
-          phone: "416-555-0123",
-          details: expect.stringContaining("Inquiry: callback"),
-        }),
-    );
-    const details = mockQueueContact.mock.calls[0][0].details;
-    expect(details).toContain("Topic: My listing");
-    expect(details).toContain("Best time: This afternoon");
-    expect(details).toContain("Phone: 416-555-0123");
-    expect(details).toContain("Notes: MLS A1234567");
+    expect(mockQueueContact).toHaveBeenCalledWith({
+      event: "INQUIRY",
+      email: "jane@example.com",
+      firstName: "Jane",
+      lastName: "Smith",
+      inquiry: {topic: "My listing", message: "Can I change my photos? <b>now</b>"},
+    });
   });
 
-  it("logs instead of rejecting when a best-effort send fails", async () => {
+  it("logs instead of rejecting when a best-effort send fails, and still records the inquiry", async () => {
     mockSendEmail.mockRejectedValue(
         Object.assign(new Error("stream does not exist"), {code: 1235}),
     );
-    const {meetingScheduled} = loadMailService();
+    const {contactInquiry} = loadMailService();
 
     await expect(
-        meetingScheduled("a@b.com", "Ann", "May 1", "10:00", "https://link"),
+        contactInquiry({name: "Ann", email: "a@b.com", topic: "Other", message: "Hi"}),
     ).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalledWith(
         "[mail] Postmark send failed",
         expect.objectContaining({code: 1235}),
     );
+    expect(mockQueueContact).toHaveBeenCalledWith(expect.objectContaining({event: "INQUIRY", firstName: "Ann"}));
   });
 
   describe("sendVerificationEmail", () => {
