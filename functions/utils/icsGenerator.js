@@ -1,8 +1,6 @@
 // Minimal RFC5545 ICS builder for a single VEVENT — used to let listing
 // owners add a confirmed appointment (verification / photography /
-// inspection) to their own calendar. Intentionally does not touch
-// config/googleOAuth.js or the existing Google Calendar booking flow in
-// scheduleService.js, which is a separate, unrelated system.
+// inspection) to their own calendar.
 
 const toIcsDate = (date) => {
   return new Date(date)

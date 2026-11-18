@@ -7,9 +7,9 @@ const {queueSmartConnectionsContact, handleOutboxEntry} = require("../smartConne
 
 const ENTRY = {event: "SIGN_UP", email: "jane@example.com", firstName: "Jane", lastName: "Doe", phone: "", details: ""};
 
-const outboxEvent = (time = new Date().toISOString()) => {
+const outboxEvent = (time = new Date().toISOString(), entry = ENTRY) => {
   const ref = {update: jest.fn()};
-  return {event: {data: {ref, data: () => ENTRY}, params: {id: "delivery-1"}, time}, ref};
+  return {event: {data: {ref, data: () => entry}, params: {id: "delivery-1"}, time}, ref};
 };
 
 const respond = (status, body = {}) =>
@@ -33,11 +33,11 @@ describe("smartConnections", () => {
   describe("queueSmartConnectionsContact", () => {
     it("writes a trimmed outbox entry", async () => {
       __refs.collectionRef.add.mockResolvedValue({id: "x"});
-      await queueSmartConnectionsContact({event: "MESSAGE", email: " jane@example.com ", firstName: "Jane", details: "Hi"});
+      await queueSmartConnectionsContact({event: "SIGN_UP", email: " jane@example.com ", firstName: "Jane", details: "Hi"});
 
       expect(db.collection).toHaveBeenCalledWith("smartConnectionsOutbox");
       expect(__refs.collectionRef.add).toHaveBeenCalledWith({
-        event: "MESSAGE",
+        event: "SIGN_UP",
         email: "jane@example.com",
         firstName: "Jane",
         lastName: "",
@@ -66,7 +66,23 @@ describe("smartConnections", () => {
       expect(__refs.collectionRef.add).not.toHaveBeenCalled();
     });
 
+    it("keeps the inquiry of INQUIRY entries, trimmed", async () => {
+      __refs.collectionRef.add.mockResolvedValue({id: "x"});
+      await queueSmartConnectionsContact({event: "INQUIRY", email: "jane@example.com", inquiry: {topic: " Other ", message: " Hi "}});
+
+      expect(__refs.collectionRef.add).toHaveBeenCalledWith(
+          expect.objectContaining({event: "INQUIRY", inquiry: {topic: "Other", message: "Hi"}}),
+      );
+    });
+
+    it("skips inquiries without their inquiry, and other events with one", async () => {
+      await queueSmartConnectionsContact({...ENTRY, event: "INQUIRY"});
+      await queueSmartConnectionsContact({...ENTRY, inquiry: {topic: "Other", message: "Hi"}});
+      expect(__refs.collectionRef.add).not.toHaveBeenCalled();
+    });
+
     it("skips entries without an email or a known event", async () => {
+      await queueSmartConnectionsContact({...ENTRY, event: "MEETING"});
       await queueSmartConnectionsContact({...ENTRY, email: " "});
       await queueSmartConnectionsContact({...ENTRY, event: "PARTY"});
       expect(__refs.collectionRef.add).not.toHaveBeenCalled();
@@ -84,6 +100,14 @@ describe("smartConnections", () => {
       expect(request.headers.Authorization).toBe("Bearer test-key");
       expect(JSON.parse(request.body)).toEqual({deliveryId: "delivery-1", ...ENTRY});
       expect(ref.update).toHaveBeenCalledWith({deliveredAt: "SERVER_TIME", contactId: "c1"});
+    });
+
+    it("sends an inquiry with its topic and message", async () => {
+      global.fetch = respond(200, {contactId: "c1", created: true});
+      const inquiry = {...ENTRY, event: "INQUIRY", inquiry: {topic: "Other", message: "Hi"}};
+      await handleOutboxEntry(outboxEvent(undefined, inquiry).event);
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({deliveryId: "delivery-1", ...inquiry});
     });
 
     it("throws on server and network errors so Firebase retries", async () => {
